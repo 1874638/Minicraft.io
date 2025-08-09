@@ -1,0 +1,1178 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MiniCraft 3D (서바이벌/크리에이티브 + 인벤토리 + 저장/불러오기)</title>
+  <style>
+    html, body { margin:0; height:100%; overflow:hidden; background:#87ceeb; font-family:system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", Arial, sans-serif; }
+
+    /* 시작 오버레이 */
+    #overlay {
+      position: fixed; inset: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0.5), rgba(0,0,0,0.75));
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #fff; z-index: 10; text-align: center;
+    }
+    #overlay button { background: #10b981; color: #fff; border: 0; border-radius: 8px; padding: 12px 18px; font-size: 16px; cursor: pointer; }
+    #overlay button:hover { background:#0ea371; }
+
+    /* HUD */
+    #ui {
+      position: fixed; top: 10px; left: 10px; z-index: 5; display: flex; gap: 12px; align-items: flex-start; color:#111;
+      user-select: none;
+    }
+    .panel {
+      background: rgba(255,255,255,0.92);
+      border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.4;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+    }
+    /* 하트 HUD */
+    #hearts { display:flex; gap:4px; align-items:center; }
+    .heart {
+      width:16px; height:16px; border-radius:3px; background:#ef4444; box-shadow: inset 0 -2px 0 rgba(0,0,0,0.12);
+    }
+    .heart.empty { background:#fee2e2; }
+
+    /* 인벤토리 핫바 */
+    #hotbar {
+      position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 6;
+      display: flex; gap:6px; padding:6px; background: rgba(255,255,255,0.92); border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+    }
+    .slot {
+      position: relative; width:44px; height:44px; border-radius:8px; border:2px solid #ddd; background:#f8fafc; cursor:pointer;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .slot.sel { outline:2px solid #0ea5e9; }
+    .slot .preview {
+      width:60%; height:60%; border-radius:4px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18);
+    }
+    .slot .cnt {
+      position:absolute; right:4px; bottom:2px; font-size:12px; color:#111; text-shadow: 0 1px 0 #fff;
+    }
+    .slot .name {
+      position:absolute; left:4px; top:2px; font-size:10px; opacity:0.8;
+    }
+
+    #crosshair { position:fixed; top:50%; left:50%; width:18px; height:18px; transform:translate(-50%, -50%); pointer-events:none; z-index:4; }
+    #crosshair::before, #crosshair::after {
+      content:""; position:absolute; background: rgba(255,255,255,0.9); box-shadow: 0 0 3px rgba(0,0,0,0.35);
+    }
+    #crosshair::before { top:50%; left:0; right:0; height:2px; transform: translateY(-50%); }
+    #crosshair::after { left:50%; top:0; bottom:0; width:2px; transform: translateX(-50%); }
+
+    /* 사망 오버레이 */
+    #death {
+      position: fixed; inset: 0; display: none;
+      alignItems: center; justify-content: center; flex-direction: column; gap: 8px;
+      background: rgba(0,0,0,0.6); color: #fff; z-index: 12; text-align: center;
+    }
+    #death .title { font-size: 28px; font-weight: 700; }
+    #death .desc  { font-size: 14px; opacity: 0.9; }
+
+    /* 일시정지(ESC) 메뉴 */
+    #menu {
+      position: fixed; inset: 0;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.55); z-index: 11;
+    }
+    #menu .box {
+      width: min(96vw, 720px);
+      background: rgba(255,255,255,0.98);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+      color: #111;
+    }
+    #menu h2 { margin: 4px 0 10px; }
+    #menu .row { display:flex; gap:8px; flex-wrap:wrap; align-items: center; }
+    #menu button {
+      background: #10b981; color:#fff; border:0; border-radius:8px; padding:9px 12px; font-size:14px; cursor:pointer;
+    }
+    #menu button.secondary { background:#3b82f6; }
+    #menu button.warn { background:#ef4444; }
+    #menu button:hover { filter: brightness(0.95); }
+    #menu .hint { font-size:12px; opacity:0.8; margin-top:8px; }
+    #menu label { font-size:13px; margin-right:6px; }
+    #menu input[type="radio"] { margin-right:4px; }
+  </style>
+</head>
+<body>
+  <!-- 시작 오버레이 -->
+  <div id="overlay">
+    <h1 style="margin:0 0 6px;">MiniCraft 3D</h1>
+    <div>클릭하여 시작 (마우스 포인터 잠금)</div>
+    <div style="opacity:0.9; font-size:14px;">
+      WASD 이동 • 마우스 시점 • 스페이스 점프(서바이벌) / 상승(크리에이티브) • Shift 하강(크리에이티브) • W 두 번: 달리기 • 좌클릭 파괴 • 우클릭 길게: 연속 설치 • 1~0 인벤토리 선택 • Esc 메뉴
+    </div>
+    <button id="startBtn">시작</button>
+  </div>
+
+  <!-- HUD -->
+  <div id="ui">
+    <div class="panel">
+      <div><strong>조작 안내</strong></div>
+      <ul style="margin:6px 0 0; padding-left:18px;">
+        <li>W/A/S/D: 이동, 마우스: 시점</li>
+        <li>스페이스: 점프(서바이벌) / 상승(크리에이티브)</li>
+        <li>Shift: 하강(크리에이티브)</li>
+        <li>W 두 번: 달리기</li>
+        <li>좌클릭: 블록 파괴(서바이벌은 인벤토리로 획득)</li>
+        <li>우클릭(길게): 선택 블록 연속 설치</li>
+        <li>1~0: 인벤토리 10칸 선택</li>
+        <li>Esc: 메뉴(저장/불러오기/게임 모드)</li>
+      </ul>
+    </div>
+    <div id="hearts" class="panel" aria-label="생명력"></div>
+  </div>
+
+  <!-- 핫바 -->
+  <div id="hotbar" aria-label="인벤토리(10칸)"></div>
+
+  <div id="crosshair"></div>
+
+  <!-- 사망/리스폰 오버레이 -->
+  <div id="death">
+    <div class="title">사망했습니다</div>
+    <div class="desc" id="deathReason">세계 밖으로 떨어졌습니다</div>
+    <div class="desc" id="respawnTimer">리스폰까지 1.0초...</div>
+  </div>
+
+  <!-- ESC 메뉴 -->
+  <div id="menu">
+    <div class="box">
+      <h2>일시정지</h2>
+      <div class="row" style="margin-bottom:10px;">
+        <button id="resumeBtn" class="secondary">계속하기 (포인터 잠금)</button>
+        <button id="saveBtn">월드 저장 (.world)</button>
+        <button id="loadBtn">월드 불러오기</button>
+        <input type="file" id="fileInput" accept=".world" style="display:none" />
+      </div>
+      <div class="hint">저장은 .world 바이너리 파일로 다운로드됩니다. 불러오기는 동일 크기 월드만 지원합니다.</div>
+
+      <div class="row" style="margin-top:12px;">
+        <strong>게임 모드:</strong>
+        <label><input type="radio" name="mode" value="survival" checked /> 서바이벌</label>
+        <label><input type="radio" name="mode" value="creative" /> 크리에이티브 (비행)</label>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    // 외부 모듈
+    import * as THREE from "https://esm.sh/three@0.161.0";
+    import { PointerLockControls } from "https://esm.sh/three@0.161.0/examples/jsm/controls/PointerLockControls.js";
+
+    // ===== 설정 =====
+    const SX = 500, SZ = 500, SY = 32; // 월드 사이즈: 500 x 500
+    const SEA_LEVEL = 6;
+    const VOID_Y = -10;
+    const RESPAWN_DELAY = 1000; // ms
+
+    // 월드 파일 포맷
+    const FILE_MAGIC = [0x57,0x4C,0x44,0x33]; // 'WLD3'
+    const FILE_VERSION = 1;
+
+    // 블록 정의 (베드락 추가)
+    const BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, WOOD:4, LEAF:5, BEDROCK:6 };
+    const BLOCK_TYPES = [BLOCK.GRASS, BLOCK.DIRT, BLOCK.STONE, BLOCK.WOOD, BLOCK.LEAF, BLOCK.BEDROCK];
+    const BLOCK_NAMES = { 1:"잔디", 2:"흙", 3:"석재", 4:"나무", 5:"나뭇잎", 6:"베드락" };
+    const BLOCK_MATS = {
+      [BLOCK.GRASS]:  new THREE.MeshStandardMaterial({ color: 0x3ba745 }),
+      [BLOCK.DIRT]:   new THREE.MeshStandardMaterial({ color: 0x8b5a2b }),
+      [BLOCK.STONE]:  new THREE.MeshStandardMaterial({ color: 0x8a8f98 }),
+      [BLOCK.WOOD]:   new THREE.MeshStandardMaterial({ color: 0x8a5a2b }),
+      [BLOCK.LEAF]:   new THREE.MeshStandardMaterial({ color: 0x2fa34a, transparent:true, opacity:0.95 }),
+      [BLOCK.BEDROCK]:new THREE.MeshStandardMaterial({ color: 0x222222 })
+    };
+
+    // 플레이어 물리
+    const PLAYER_HEIGHT = 1.8;
+    const EYE_HEIGHT    = 1.6;
+    const PLAYER_RADIUS = 0.35;
+    const GRAVITY       = 25;
+    const JUMP_V        = 8.5;
+    const MOVE_SPEED    = 6.0;
+    const AIR_CONTROL   = 0.2;
+    const RAY_DIST      = 6;
+    const FLY_SPEED     = 8.0; // 크리에이티브 비행 속도
+
+    // 달리기(스프린트)
+    const SPRINT_MULT = 1.7;         // 달리기 배속
+    const DOUBLE_TAP_MS = 250;       // 더블탭 허용 시간(ms)
+
+    // 연속 설치 설정
+    const PLACE_RATE_MS = 120; // 연속 설치 간격(ms)
+
+    // ===== 전역 상태 =====
+    let scene, renderer, camera, controls, clock;
+    let world; // Uint8Array (길이 SX*SY*SZ)
+    let meshes = {}; // type -> InstancedMesh(노출된 블록만)
+    const raycaster = new THREE.Raycaster();
+    raycaster.far = RAY_DIST;
+
+    // 타겟 하이라이트(히트박스 표시)
+    let highlight;
+
+    // 월드보더 메쉬 그룹
+    let worldBorderGroup;
+
+    // 플레이어/상태
+    const spawnPos = new THREE.Vector3(SX/2 + 0.5, 12, SZ/2 + 0.5);
+    const playerPos = spawnPos.clone();
+    const vel = new THREE.Vector3(0,0,0);
+    let onGround = false;
+    let dead = false;
+    let started = false;
+    let deathTimeout = 0;
+    const keys = new Set();
+
+    // 스프린트 상태
+    let isSprinting = false;
+    let lastWTap = 0;
+
+    // 우클릭 연속 설치 상태
+    let rightDown = false;
+    let lastPlaceTime = 0;
+
+    // 모드/체력
+    const MODE = { SURVIVAL: "survival", CREATIVE: "creative" };
+    let mode = MODE.SURVIVAL;
+    const HEART_MAX = 12;
+    let hearts = HEART_MAX;
+
+    // 인벤토리(10칸)
+    const INV_SLOTS = 10;
+    let inventory = Array.from({length: INV_SLOTS}, ()=>({id:0, cnt:0}));
+    let selectedSlot = 0;
+
+    // UI
+    const overlay = document.getElementById("overlay");
+    const startBtn = document.getElementById("startBtn");
+    const heartsEl = document.getElementById("hearts");
+    const hotbarEl = document.getElementById("hotbar");
+    const deathEl = document.getElementById("death");
+    const deathReasonEl = document.getElementById("deathReason");
+    const respawnTimerEl = document.getElementById("respawnTimer");
+    const menuEl = document.getElementById("menu");
+    const resumeBtn = document.getElementById("resumeBtn");
+    const saveBtn = document.getElementById("saveBtn");
+    const loadBtn = document.getElementById("loadBtn");
+    const fileInput = document.getElementById("fileInput");
+    const modeRadios = Array.from(document.querySelectorAll('input[name="mode"]'));
+
+    // ===== 유틸 =====
+    const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+    const inBounds = (x,y,z)=> x>=0 && x<SX && y>=0 && y<SY && z>=0 && z<SZ;
+    const idx = (x,y,z)=> x + SX * (z + SZ * y);
+    const get = (x,y,z)=> inBounds(x,y,z) ? world[idx(x,y,z)] : BLOCK.AIR;
+    const set = (x,y,z,b)=> { if (inBounds(x,y,z)) world[idx(x,y,z)] = b; };
+
+    // 노출 판정: 바닥(y=0) 아래쪽 OOB는 노출로 보지 않음
+    function isExposed(x,y,z){
+      if (!inBounds(x,y,z)) return false;
+      const b = get(x,y,z);
+      if (b === BLOCK.AIR) return false;
+      return (
+        !inBounds(x+1,y,z) || get(x+1,y,z)===BLOCK.AIR ||
+        !inBounds(x-1,y,z) || get(x-1,y,z)===BLOCK.AIR ||
+        !inBounds(x,y+1,z) || get(x,y+1,z)===BLOCK.AIR ||
+        (y>0 && (!inBounds(x,y-1,z) || get(x,y-1,z)===BLOCK.AIR)) ||
+        !inBounds(x,y,z+1) || get(x,y,z+1)===BLOCK.AIR ||
+        !inBounds(x,y,z-1) || get(x,y,z-1)===BLOCK.AIR
+      );
+    }
+
+    function blockColorCSS(b){
+      const mat = BLOCK_MATS[b];
+      return mat ? "#"+mat.color.getHexString() : "#000000";
+    }
+
+    // ===== 초기화 =====
+    init();
+    animate();
+
+    function init(){
+      renderer = new THREE.WebGLRenderer({ antialias:true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.shadowMap.enabled = true;
+      document.body.appendChild(renderer.domElement);
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x87ceeb);
+      scene.fog = new THREE.Fog(0x87ceeb, 140, 320);
+
+      camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+      controls = new PointerLockControls(camera, renderer.domElement);
+      scene.add(controls.getObject());
+
+      // 빛
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x6688aa, 0.9);
+      scene.add(hemi);
+      const dir = new THREE.DirectionalLight(0xffffff, 0.85);
+      dir.position.set(200, 300, 160);
+      dir.castShadow = true;
+      dir.shadow.mapSize.set(2048,2048);
+      dir.shadow.camera.left = -300; dir.shadow.camera.right = 300;
+      dir.shadow.camera.top = 300; dir.shadow.camera.bottom = -300;
+      dir.shadow.camera.far = 800;
+      scene.add(dir);
+
+      // 수면
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(12000,12000),
+        new THREE.MeshPhongMaterial({ color:0x6ec6ff, transparent:true, opacity:0.12, depthWrite:false })
+      );
+      plane.rotation.x = -Math.PI/2;
+      plane.position.y = SEA_LEVEL - 0.5;
+      scene.add(plane);
+
+      // 하이라이트(히트박스)
+      const edgeGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.02,1.02,1.02));
+      const edgeMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent:true, opacity:0.9, depthTest:false });
+      highlight = new THREE.LineSegments(edgeGeo, edgeMat);
+      highlight.visible = false;
+      highlight.renderOrder = 999;
+      scene.add(highlight);
+
+      // 이벤트
+      window.addEventListener("resize", onResize);
+      document.addEventListener("keydown", onKeyDown);
+      document.addEventListener("keyup", onKeyUp);
+      renderer.domElement.addEventListener("mousedown", onMouseDown);
+      renderer.domElement.addEventListener("mouseup", onMouseUp);
+      renderer.domElement.addEventListener("contextmenu", e=>e.preventDefault());
+
+      startBtn.addEventListener("click", ()=>controls.lock());
+      controls.addEventListener("lock", ()=>{
+        overlay.style.display = "none";
+        menuEl.style.display = "none";
+        started = true;
+      });
+      controls.addEventListener("unlock", ()=>{
+        rightDown = false; // 포인터 해제 시 연속 설치 중단
+        if (!dead && started) menuEl.style.display = "flex";
+      });
+
+      // ESC
+      document.addEventListener("keydown", (e)=>{
+        if (e.key === "Escape" || e.key === "Esc"){
+          if (controls.isLocked){
+            try { controls.unlock(); } catch {}
+          } else if (started && !dead){
+            menuEl.style.display = "flex";
+          }
+        }
+      });
+
+      // 메뉴 버튼
+      resumeBtn.addEventListener("click", ()=>{
+        menuEl.style.display = "none";
+        controls.lock();
+      });
+      saveBtn.addEventListener("click", handleSave);
+      loadBtn.addEventListener("click", ()=>fileInput.click());
+      fileInput.addEventListener("change", handleFileChosen);
+
+      // 모드 라디오
+      modeRadios.forEach(r => r.addEventListener("change", onModeChanged));
+
+      // 월드 생성 + 나무 배치 (최소 20개, 최대 60개)
+      world = createDefaultWorld(SX, SY, SZ);
+      placeRandomTrees(20 + Math.floor(Math.random() * 41)); // 20..60
+      rebuildVisibleMeshes();
+
+      // 월드보더 생성(가시 벽)
+      createWorldBorder();
+
+      // HUD/인벤 초기화
+      initHearts();
+      initInventoryUI();
+      resetInventoryForMode(); // 모드 기본(서바이벌) 세팅
+
+      // 스폰
+      dropToGround(spawnPos);
+      playerPos.copy(spawnPos);
+      syncCameraToPlayer();
+
+      clock = new THREE.Clock();
+    }
+
+    function onResize(){
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    }
+
+    // ===== 월드보더(가시 벽 + 충돌은 물리에서 처리) =====
+    function createWorldBorder(){
+      if (worldBorderGroup){
+        scene.remove(worldBorderGroup);
+        worldBorderGroup = undefined;
+      }
+      worldBorderGroup = new THREE.Group();
+      const thickness = 0.2;
+      const height = SY * 4;
+      const yCenter = height/2 - 0.5;
+
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0x00ffff,
+        transparent: true,
+        opacity: 0.25,
+        depthWrite: false
+      });
+
+      // 서쪽(x = -0.5)
+      {
+        const geo = new THREE.BoxGeometry(thickness, height, SZ + 2);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(-0.5, yCenter, (SZ-1)/2);
+        worldBorderGroup.add(mesh);
+      }
+      // 동쪽(x = SX-0.5)
+      {
+        const geo = new THREE.BoxGeometry(thickness, height, SZ + 2);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(SX - 0.5, yCenter, (SZ-1)/2);
+        worldBorderGroup.add(mesh);
+      }
+      // 북쪽(z = -0.5)
+      {
+        const geo = new THREE.BoxGeometry(SX + 2, height, thickness);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set((SX-1)/2, yCenter, -0.5);
+        worldBorderGroup.add(mesh);
+      }
+      // 남쪽(z = SZ-0.5)
+      {
+        const geo = new THREE.BoxGeometry(SX + 2, height, thickness);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set((SX-1)/2, yCenter, SZ - 0.5);
+        worldBorderGroup.add(mesh);
+      }
+
+      worldBorderGroup.renderOrder = 998;
+      scene.add(worldBorderGroup);
+    }
+
+    // ===== 모드/체력 =====
+    function onModeChanged(){
+      const val = (modeRadios.find(r=>r.checked)?.value)||"survival";
+      mode = (val === "creative") ? MODE.CREATIVE : MODE.SURVIVAL;
+      resetInventoryForMode();
+      renderHearts();
+    }
+
+    function initHearts(){
+      heartsEl.innerHTML = "";
+      for (let i=0;i<HEART_MAX;i++){
+        const d = document.createElement("div");
+        d.className = "heart";
+        heartsEl.appendChild(d);
+      }
+      renderHearts();
+    }
+
+    function renderHearts(){
+      const nodes = heartsEl.querySelectorAll(".heart");
+      nodes.forEach((n, i)=>{
+        n.classList.toggle("empty", i >= hearts);
+        n.style.display = (mode===MODE.SURVIVAL) ? "inline-block" : "none";
+      });
+      heartsEl.style.display = (mode===MODE.SURVIVAL) ? "flex" : "none";
+    }
+
+    function applyDamage(h, reason="피해를 입었습니다"){
+      if (mode !== MODE.SURVIVAL) return;
+      hearts = clamp(hearts - h, 0, HEART_MAX);
+      renderHearts();
+      if (hearts <= 0){
+        kill(reason);
+      }
+    }
+
+    // ===== 인벤토리 =====
+    function initInventoryUI(){
+      hotbarEl.innerHTML = "";
+      for (let i=0;i<INV_SLOTS;i++){
+        const slot = document.createElement("div");
+        slot.className = "slot" + (i===selectedSlot ? " sel" : "");
+        slot.dataset.index = String(i);
+        slot.innerHTML = `
+          <div class="name"></div>
+          <div class="preview"></div>
+          <div class="cnt"></div>
+        `;
+        slot.addEventListener("click", ()=>{
+          selectSlot(i);
+        });
+        hotbarEl.appendChild(slot);
+      }
+      refreshInventoryUI();
+    }
+
+    function resetInventoryForMode(){
+      if (mode === MODE.CREATIVE){
+        inventory = [
+          {id:BLOCK.GRASS, cnt:9999},
+          {id:BLOCK.DIRT,  cnt:9999},
+          {id:BLOCK.STONE, cnt:9999},
+          {id:BLOCK.WOOD,  cnt:9999},
+          {id:BLOCK.LEAF,  cnt:9999},
+          {id:0,cnt:0},{id:0,cnt:0},{id:0,cnt:0},{id:0,cnt:0},{id:0,cnt:0}
+        ];
+      } else {
+        inventory = [
+          {id:BLOCK.DIRT,  cnt:20},
+          {id:BLOCK.STONE, cnt:10},
+          {id:0,cnt:0},{id:0,cnt:0},{id:0,cnt:0},
+          {id:0,cnt:0},{id:0,cnt:0},{id:0,cnt:0},{id:0,cnt:0},{id:0,cnt:0}
+        ];
+        hearts = HEART_MAX;
+      }
+      selectedSlot = 0;
+      refreshInventoryUI();
+      renderHearts();
+    }
+
+    function refreshInventoryUI(){
+      const slots = hotbarEl.querySelectorAll(".slot");
+      slots.forEach((el, i)=>{
+        const it = inventory[i] || {id:0, cnt:0};
+        el.classList.toggle("sel", i===selectedSlot);
+        const nameEl = el.querySelector(".name");
+        const prevEl = el.querySelector(".preview");
+        const cntEl  = el.querySelector(".cnt");
+        if (it.id){
+          nameEl.textContent = BLOCK_NAMES[it.id] || "";
+          prevEl.style.background = blockColorCSS(it.id);
+          prevEl.style.display = "block";
+          cntEl.textContent = (mode===MODE.CREATIVE) ? "∞" : String(it.cnt);
+        } else {
+          nameEl.textContent = "";
+          prevEl.style.display = "none";
+          cntEl.textContent = "";
+        }
+      });
+    }
+
+    function selectSlot(i){
+      selectedSlot = clamp(i, 0, INV_SLOTS-1);
+      refreshInventoryUI();
+    }
+
+    function selectedBlockId(){
+      const it = inventory[selectedSlot];
+      return it?.id || 0;
+    }
+
+    function addToInventory(blockId, count=1){
+      if (!blockId || blockId===BLOCK.AIR) return true;
+      if (blockId === BLOCK.BEDROCK) return true; // 베드락은 인벤토리로 추가하지 않음
+      if (mode === MODE.CREATIVE) return true;
+      for (let i=0;i<INV_SLOTS;i++){
+        if (inventory[i].id === blockId){
+          inventory[i].cnt += count;
+          refreshInventoryUI();
+          return true;
+        }
+      }
+      for (let i=0;i<INV_SLOTS;i++){
+        if (!inventory[i].id){
+          inventory[i].id = blockId;
+          inventory[i].cnt = count;
+          refreshInventoryUI();
+          return true;
+        }
+      }
+      alert("인벤토리가 가득 찼습니다!");
+      return false;
+    }
+
+    function consumeFromSelected(count=1){
+      if (mode === MODE.CREATIVE) return true;
+      const it = inventory[selectedSlot];
+      if (!it?.id || it.cnt < count) return false;
+      it.cnt -= count;
+      if (it.cnt <= 0){ it.id = 0; it.cnt = 0; }
+      refreshInventoryUI();
+      return true;
+    }
+
+    // ===== 입력 =====
+    function onKeyDown(e){
+      const k = e.key.toLowerCase();
+      keys.add(k);
+
+      // W 더블탭으로 스프린트 시작
+      if (k === "w" && !e.repeat){
+        const now = performance.now();
+        if (now - lastWTap <= DOUBLE_TAP_MS){
+          isSprinting = true; // W를 누르고 있는 동안만 유지 (keyup에서 해제)
+        }
+        lastWTap = now;
+      }
+
+      // 숫자키로 슬롯 선택 (1~0 -> 0..9)
+      if (k>="1" && k<="9"){
+        selectSlot(Number(k)-1);
+      } else if (k==="0"){
+        selectSlot(9);
+      }
+      // 점프는 서바이벌에서만
+      if (k===" "){
+        if (!dead && onGround && mode===MODE.SURVIVAL){ vel.y = JUMP_V; onGround = false; }
+      }
+    }
+    function onKeyUp(e){
+      const k = e.key.toLowerCase();
+      keys.delete(k);
+      if (k === "w"){
+        isSprinting = false; // W 키를 떼면 스프린트 해제
+      }
+    }
+
+    // ===== 기본 월드 생성 (y=0 전체 베드락) =====
+    function createDefaultWorld(sx, sy, sz){
+      const arr = new Uint8Array(sx*sy*sz);
+      for (let x=0; x<sx; x++){
+        for (let z=0; z<sz; z++){
+          // y=0은 항상 베드락
+          arr[idx(x,0,z)] = BLOCK.BEDROCK;
+
+          const h = Math.floor(
+            8
+            + 4.0 * Math.sin(x * 0.02)
+            + 3.5 * Math.cos(z * 0.018)
+            + 2.2 * Math.sin((x + z) * 0.012)
+          );
+          const height = clamp(h, 1, sy-3);
+          // 지형 채우기: 1..height
+          for (let y=1; y<=height; y++){
+            let id = BLOCK.DIRT;
+            if (y <= height - 3) id = BLOCK.STONE;
+            else if (y === height) id = (height <= SEA_LEVEL ? BLOCK.DIRT : BLOCK.GRASS);
+            arr[idx(x,y,z)] = id;
+          }
+        }
+      }
+      return arr;
+    }
+
+    // ===== 나무 생성 =====
+    function getSurfaceY(x, z){
+      for (let y = SY-2; y>=0; y--){
+        if (get(x,y,z) !== BLOCK.AIR) return y;
+      }
+      return -1;
+    }
+
+    function placeTreeAt(x, z, trunkH){
+      const y = getSurfaceY(x, z);
+      if (y < 0) return false;
+      if (y <= SEA_LEVEL) return false;
+      const dx = x + 0.5 - spawnPos.x, dz = z + 5 - spawnPos.z;
+      if ((dx*dx + dz*dz) < 8*8) return false;
+
+      const topY = Math.min(SY-2, y + trunkH);
+      for (let ty = y+1; ty <= topY; ty++){
+        if (!inBounds(x, ty, z)) return false;
+        if (get(x,ty,z) !== BLOCK.AIR) return false;
+      }
+      for (let ty = y+1; ty <= topY; ty++){
+        set(x, ty, z, BLOCK.WOOD);
+      }
+      for (let ly = topY-2; ly <= topY+1; ly++){
+        const r = (ly === topY+1) ? 1 : 2;
+        for (let lx = x - r; lx <= x + r; lx++){
+          for (let lz = z - r; lz <= z + r; lz++){
+            if (!inBounds(lx, ly, lz)) continue;
+            if (Math.max(Math.abs(lx-x), Math.abs(lz-z)) > r) continue;
+            if (lx === x && lz === z && ly <= topY) continue;
+            if (get(lx,ly,lz) === BLOCK.AIR){
+              set(lx,ly,lz, BLOCK.LEAF);
+            }
+          }
+        }
+      }
+      return true;
+    }
+
+    function placeRandomTrees(count){
+      let placed = 0;
+      let attempts = 0;
+      const maxAttempts = count * 50;
+      while (placed < count && attempts < maxAttempts){
+        attempts++;
+        const x = Math.floor(Math.random() * SX);
+        const z = Math.floor(Math.random() * SZ);
+        const trunkH = 4 + Math.floor(Math.random() * 4);
+        if (placeTreeAt(x, z, trunkH)) placed++;
+      }
+    }
+
+    // ===== 메쉬 빌드 (노출된 블록만) =====
+    function rebuildVisibleMeshes(){
+      Object.values(meshes).forEach(m => scene.remove(m));
+      meshes = {};
+
+      const counts = {
+        [BLOCK.GRASS]:0, [BLOCK.DIRT]:0, [BLOCK.STONE]:0,
+        [BLOCK.WOOD]:0, [BLOCK.LEAF]:0, [BLOCK.BEDROCK]:0
+      };
+      for (let y=0; y<SY; y++){
+        for (let z=0; z<SZ; z++){
+          for (let x=0; x<SX; x++){
+            if (isExposed(x,y,z)){
+              counts[get(x,y,z)]++;
+            }
+          }
+        }
+      }
+
+      const cubeGeo = new THREE.BoxGeometry(1,1,1);
+
+      for (const type of BLOCK_TYPES){
+        const c = counts[type] | 0;
+        if (!c) continue;
+        const mesh = new THREE.InstancedMesh(cubeGeo, BLOCK_MATS[type], c);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        meshes[type] = mesh;
+        scene.add(mesh);
+      }
+
+      const temp = new THREE.Object3D();
+      const filled = {
+        [BLOCK.GRASS]:0, [BLOCK.DIRT]:0, [BLOCK.STONE]:0,
+        [BLOCK.WOOD]:0, [BLOCK.LEAF]:0, [BLOCK.BEDROCK]:0
+      };
+      for (let y=0; y<SY; y++){
+        for (let z=0; z<SZ; z++){
+          for (let x=0; x<SX; x++){
+            if (!isExposed(x,y,z)) continue;
+            const b = get(x,y,z);
+            const mesh = meshes[b]; if (!mesh) continue;
+            const i = filled[b]++;
+            temp.position.set(x, y, z);
+            temp.rotation.set(0,0,0);
+            temp.updateMatrix();
+            mesh.setMatrixAt(i, temp.matrix);
+          }
+        }
+      }
+      for (const type of Object.keys(meshes)) meshes[type].instanceMatrix.needsUpdate = true;
+    }
+
+    // ===== 클릭(파괴/설치) 및 연속 설치 =====
+    function onMouseDown(e){
+      if (!controls.isLocked || dead) return;
+      if (e.button === 0){
+        // 좌클릭: 제거(채굴)
+        performBreakAtCrosshair();
+      } else if (e.button === 2){
+        // 우클릭: 설치 1회 + 연속 설치 시작
+        performPlaceAtCrosshair();
+        rightDown = true;
+      }
+    }
+    function onMouseUp(e){
+      if (e.button === 2){
+        rightDown = false;
+      }
+    }
+
+    function performBreakAtCrosshair(){
+      raycaster.setFromCamera({x:0,y:0}, camera);
+      const targets = Object.values(meshes);
+      const hits = raycaster.intersectObjects(targets, false);
+      if (!hits.length) return false;
+      const hit = hits[0];
+      const pos = instancePosition(hit.object, hit.instanceId);
+      const bx = Math.round(pos.x), by = Math.round(pos.y), bz = Math.round(pos.z);
+      const mined = get(bx,by,bz);
+      if (mined === BLOCK.BEDROCK) return false; // 베드락 파괴 불가
+      if (inBounds(bx,by,bz) && mined!==BLOCK.AIR){
+        set(bx,by,bz,BLOCK.AIR);
+        addToInventory(mined, 1); // 서바이벌 획득(함수 내에서 모드 처리)
+        rebuildVisibleMeshes();
+        return true;
+      }
+      return false;
+    }
+
+    function performPlaceAtCrosshair(){
+      if (!controls.isLocked || dead) return false;
+      const placeId = selectedBlockId();
+      if (!placeId || placeId === BLOCK.BEDROCK) return false;
+
+      raycaster.setFromCamera({x:0,y:0}, camera);
+      const targets = Object.values(meshes);
+      const hits = raycaster.intersectObjects(targets, false);
+      if (!hits.length) return false;
+
+      const hit = hits[0];
+      const base = instancePosition(hit.object, hit.instanceId);
+      const n = hit.face?.normal ? hit.face.normal.clone() : new THREE.Vector3(0,1,0);
+      const target = new THREE.Vector3(
+        Math.round(base.x + n.x),
+        Math.round(base.y + n.y),
+        Math.round(base.z + n.z)
+      );
+      if (!inBounds(target.x, target.y, target.z)) return false;
+      if (get(target.x,target.y,target.z) !== BLOCK.AIR) return false;
+      if (wouldIntersectPlayer(target.x, target.y, target.z)) return false;
+
+      if (mode===MODE.CREATIVE || consumeFromSelected(1)){
+        set(target.x, target.y, target.z, placeId);
+        rebuildVisibleMeshes();
+        return true;
+      }
+      return false;
+    }
+
+    function instancePosition(instancedMesh, instanceId){
+      const m = new THREE.Matrix4();
+      const p = new THREE.Vector3();
+      instancedMesh.getMatrixAt(instanceId, m);
+      p.setFromMatrixPosition(m);
+      return p;
+    }
+
+    function wouldIntersectPlayer(bx,by,bz){
+      const bmin = new THREE.Vector3(bx-0.5, by-0.5, bz-0.5);
+      const bmax = new THREE.Vector3(bx+0.5, by+0.5, bz+0.5);
+      const pmin = new THREE.Vector3(playerPos.x - PLAYER_RADIUS, playerPos.y, playerPos.z - PLAYER_RADIUS);
+      const pmax = new THREE.Vector3(playerPos.x + PLAYER_RADIUS, playerPos.y + PLAYER_HEIGHT, playerPos.z + PLAYER_RADIUS);
+      return !(bmax.x < pmin.x || bmin.x > pmax.x || bmax.y < pmin.y || bmin.y > pmax.y || bmax.z < pmin.z || bmin.z > pmax.z);
+    }
+
+    // ===== 물리/충돌/낙하 데미지/사망 =====
+    function dropToGround(pos){
+      let y = Math.min(SY-1, Math.floor(pos.y));
+      while (y>0 && get(Math.floor(pos.x), y, Math.floor(pos.z)) === BLOCK.AIR) y--;
+      pos.y = y + 0.51;
+    }
+
+    function kill(reason = "사망했습니다"){
+      if (dead) return;
+      dead = true;
+      vel.set(0,0,0);
+      deathReasonEl.textContent = reason;
+      deathEl.style.display = "flex";
+      menuEl.style.display = "none";
+      const t0 = performance.now();
+      const tick = ()=>{
+        const left = Math.max(0, RESPAWN_DELAY - (performance.now()-t0));
+        respawnTimerEl.textContent = `리스폰까지 ${(left/1000).toFixed(1)}초...`;
+        if (left > 0 && dead) requestAnimationFrame(tick);
+      };
+      tick();
+      clearTimeout(deathTimeout);
+      deathTimeout = setTimeout(respawn, RESPAWN_DELAY);
+    }
+
+    function respawn(){
+      playerPos.copy(spawnPos);
+      vel.set(0,0,0);
+      dropToGround(playerPos);
+      onGround = true;
+      dead = false;
+      if (mode===MODE.SURVIVAL){
+        hearts = HEART_MAX;
+        renderHearts();
+      }
+      deathEl.style.display = "none";
+      if (!controls.isLocked && started) menuEl.style.display = "flex";
+      syncCameraToPlayer();
+    }
+
+    function updatePhysics(dt){
+      if (playerPos.y < VOID_Y){ kill("세계 밖으로 떨어졌습니다"); return; }
+
+      // 수평 이동 입력
+      let fwd=0, str=0;
+      if (keys.has("w")) fwd += 1;
+      if (keys.has("s")) fwd -= 1;
+      if (keys.has("a")) str -= 1;
+      if (keys.has("d")) str += 1;
+      const len = Math.hypot(fwd, str);
+      if (len>0){ fwd/=len; str/=len; }
+
+      const forward = new THREE.Vector3();
+      controls.getDirection(forward);
+      forward.y = 0; forward.normalize();
+      const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).normalize().negate();
+
+      const desired = new THREE.Vector3();
+      desired.addScaledVector(forward, fwd);
+      desired.addScaledVector(right, str);
+      if (desired.lengthSq() > 0) desired.normalize();
+
+      // 스피드 계산 (크리에이티브/지상/공중 제어, 스프린트 반영)
+      let baseSpeed = (onGround || mode===MODE.CREATIVE) ? MOVE_SPEED : MOVE_SPEED * AIR_CONTROL;
+      if (isSprinting) baseSpeed *= SPRINT_MULT;
+      const targetVel = desired.multiplyScalar(baseSpeed);
+
+      vel.x = THREE.MathUtils.damp(vel.x, targetVel.x, 10, dt);
+      vel.z = THREE.MathUtils.damp(vel.z, targetVel.z, 10, dt);
+
+      const prevOnGround = onGround;
+      const preVelY = vel.y;
+
+      // 수직(점프/중력 or 비행)
+      if (mode === MODE.CREATIVE){
+        let upDown = 0;
+        if (keys.has(" ")) upDown += 1;      // 스페이스 상승
+        if (keys.has("shift")) upDown -= 1;  // 쉬프트 하강
+        const targetVy = upDown * FLY_SPEED;
+        vel.y = THREE.MathUtils.damp(vel.y, targetVy, 10, dt);
+      } else {
+        vel.y -= GRAVITY * dt;
+        if (vel.y < -40) vel.y = -40;
+      }
+
+      onGround = false;
+      sweepAxis("x", dt);
+      sweepAxis("z", dt);
+      sweepAxis("y", dt);
+
+      // 착지 판정 -> 낙하 데미지 (서바이벌만)
+      if (!prevOnGround && onGround){
+        const impact = Math.abs(preVelY);
+        if (impact > 12 && mode===MODE.SURVIVAL){
+          applyDamage(6, "낙하 데미지로 사망");
+        }
+      }
+
+      if (playerPos.y < VOID_Y){ kill("세계 밖으로 떨어졌습니다"); return; }
+
+      syncCameraToPlayer();
+    }
+
+    function syncCameraToPlayer(){
+      const obj = controls.getObject();
+      obj.position.set(playerPos.x, playerPos.y + EYE_HEIGHT, playerPos.z);
+    }
+
+    function sweepAxis(axis, dt){
+      const EPS = 1e-4;
+      const delta = vel[axis] * dt;
+      if (delta === 0) return;
+
+      let nx = playerPos.x, ny = playerPos.y, nz = playerPos.z;
+      if (axis==="x") nx += delta;
+      if (axis==="y") ny += delta;
+      if (axis==="z") nz += delta;
+
+      let minX = nx - PLAYER_RADIUS, maxX = nx + PLAYER_RADIUS;
+      let minY = ny,               maxY = ny + PLAYER_HEIGHT;
+      let minZ = nz - PLAYER_RADIUS, maxZ = nz + PLAYER_RADIUS;
+
+      const bminX = Math.floor(minX + 0.5 - EPS);
+      const bmaxX = Math.floor(maxX + 0.5 - EPS);
+      const bminY = Math.floor(minY + 0.5 - EPS);
+      const bmaxY = Math.floor(maxY + 0.5 - EPS);
+      const bminZ = Math.floor(minZ + 0.5 - EPS);
+      const bmaxZ = Math.floor(maxZ + 0.5 - EPS);
+
+      // 블록과의 충돌 처리
+      for (let by=bminY; by<=bmaxY; by++){
+        for (let bz=bminZ; bz<=bmaxZ; bz++){
+          for (let bx=bminX; bx<=bmaxX; bx++){
+            if (!inBounds(bx,by,bz)) continue;
+            if (get(bx,by,bz)===BLOCK.AIR) continue;
+
+            const blockMinX = bx - 0.5, blockMaxX = bx + 0.5;
+            const blockMinY = by - 0.5, blockMaxY = by + 0.5;
+            const blockMinZ = bz - 0.5, blockMaxZ = bz + 0.5;
+
+            const overlapX = !(maxX <= blockMinX || minX >= blockMaxX);
+            const overlapY = !(maxY <= blockMinY || minY >= blockMaxY);
+            const overlapZ = !(maxZ <= blockMinZ || minZ >= blockMaxZ);
+
+            if (overlapX && overlapY && overlapZ){
+              if (axis==="x"){
+                if (delta > 0) nx = blockMinX - PLAYER_RADIUS - EPS;
+                else           nx = blockMaxX + PLAYER_RADIUS + EPS;
+                vel.x = 0;
+                minX = nx - PLAYER_RADIUS; maxX = nx + PLAYER_RADIUS;
+              } else if (axis==="y"){
+                if (delta > 0){
+                  ny = blockMinY - PLAYER_HEIGHT - EPS;
+                  vel.y = 0;
+                } else {
+                  ny = blockMaxY + EPS;
+                  vel.y = 0;
+                  onGround = true;
+                }
+                minY = ny; maxY = ny + PLAYER_HEIGHT;
+              } else if (axis==="z"){
+                if (delta > 0) nz = blockMinZ - PLAYER_RADIUS - EPS;
+                else           nz = blockMaxZ + PLAYER_RADIUS + EPS;
+                vel.z = 0;
+                minZ = nz - PLAYER_RADIUS; maxZ = nz + PLAYER_RADIUS;
+              }
+            }
+          }
+        }
+      }
+
+      // 월드보더 충돌(벽): x,z 경계 [-0.5, SX-0.5], [-0.5, SZ-0.5]
+      if (axis==="x"){
+        minX = nx - PLAYER_RADIUS; maxX = nx + PLAYER_RADIUS;
+        const minWall = -0.5, maxWall = SX - 0.5;
+        if (minX < minWall){
+          nx = minWall + PLAYER_RADIUS + EPS;
+          vel.x = 0;
+        } else if (maxX > maxWall){
+          nx = maxWall - PLAYER_RADIUS - EPS;
+          vel.x = 0;
+        }
+      } else if (axis==="z"){
+        minZ = nz - PLAYER_RADIUS; maxZ = nz + PLAYER_RADIUS;
+        const minWall = -0.5, maxWall = SZ - 0.5;
+        if (minZ < minWall){
+          nz = minWall + PLAYER_RADIUS + EPS;
+          vel.z = 0;
+        } else if (maxZ > maxWall){
+          nz = maxWall - PLAYER_RADIUS - EPS;
+          vel.z = 0;
+        }
+      }
+
+      if (axis==="x") playerPos.x = nx;
+      if (axis==="y") playerPos.y = ny;
+      if (axis==="z") playerPos.z = nz;
+    }
+
+    // ===== 타겟 하이라이트 업데이트 + 연속 설치 처리 =====
+    function updateTargetHighlight(){
+      if (!controls.isLocked || dead){
+        if (highlight) highlight.visible = false;
+        return;
+      }
+      raycaster.setFromCamera({x:0,y:0}, camera);
+      const targets = Object.values(meshes);
+      if (!targets.length){ if (highlight) highlight.visible = false; return; }
+      const hits = raycaster.intersectObjects(targets, false);
+      if (hits.length){
+        const hit = hits[0];
+        const pos = instancePosition(hit.object, hit.instanceId);
+        const bx = Math.round(pos.x), by = Math.round(pos.y), bz = Math.round(pos.z);
+        highlight.position.set(bx, by, bz);
+        highlight.visible = true;
+      } else {
+        highlight.visible = false;
+      }
+    }
+
+    // ===== 저장/불러오기 =====
+    function handleSave(){
+      try {
+        const buffer = serializeWorld();
+        const blob = new Blob([buffer], { type: "application/octet-stream" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = defaultWorldName();
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+      } catch (e){
+        alert("저장 중 오류: " + (e?.message || e));
+      }
+    }
+
+    function handleFileChosen(e){
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file) return;
+      if (!file.name.toLowerCase().endsWith(".world")){
+        if (!confirm("확장자가 .world가 아닙니다. 계속 불러오시겠습니까?")) return;
+      }
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        try {
+          const buffer = reader.result;
+          deserializeWorld(buffer);
+          rebuildVisibleMeshes();
+          vel.set(0,0,0);
+          dropToGround(spawnPos);
+          playerPos.copy(spawnPos);
+          onGround = true;
+          dead = false;
+          deathEl.style.display = "none";
+          syncCameraToPlayer();
+          alert("월드를 불러왔습니다!");
+        } catch (err){
+          alert("불러오기 실패: " + (err?.message || err));
+        }
+      };
+      reader.onerror = ()=> alert("파일을 읽는 중 오류가 발생했습니다.");
+      reader.readAsArrayBuffer(file);
+    }
+
+    function defaultWorldName(){
+      const d = new Date();
+      const pad = n=>String(n).padStart(2,"0");
+      return `world-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.world`;
+    }
+
+    function serializeWorld(){
+      const N = SX*SY*SZ;
+      const headerSize = 16;
+      const buffer = new ArrayBuffer(headerSize + N);
+      const dv = new DataView(buffer);
+      for (let i=0;i<4;i++) dv.setUint8(i, FILE_MAGIC[i]);
+      dv.setUint16(4, FILE_VERSION, true);
+      dv.setUint16(6, SX, true);
+      dv.setUint16(8, SY, true);
+      dv.setUint16(10, SZ, true);
+      dv.setUint32(12, N, true);
+      new Uint8Array(buffer, headerSize, N).set(world);
+      return buffer;
+    }
+
+    function deserializeWorld(buffer){
+      const dv = new DataView(buffer);
+      if (dv.byteLength < 16) throw new Error("파일 크기가 너무 작습니다.");
+      for (let i=0;i<4;i++){
+        if (dv.getUint8(i) !== FILE_MAGIC[i]) throw new Error("잘못된 파일 형식(시그니처).");
+      }
+      const version = dv.getUint16(4, true);
+      if (version !== FILE_VERSION) throw new Error(`지원하지 않는 버전: ${version}`);
+      const sx = dv.getUint16(6, true);
+      const sy = dv.getUint16(8, true);
+      const sz = dv.getUint16(10, true);
+      const N = dv.getUint32(12, true);
+      if (sx !== SX || sy !== SY || sz !== SZ) {
+        throw new Error(`월드 크기 불일치: 파일(${sx}x${sy}x${sz}) ≠ 현재(${SX}x${SY}x${SZ})`);
+      }
+      if (N !== SX*SY*SZ) throw new Error("데이터 길이가 월드 크기와 일치하지 않습니다.");
+      const data = new Uint8Array(buffer, 16, N);
+      if (!world || world.length !== N) world = new Uint8Array(N);
+      world.set(data);
+    }
+
+    // ===== 루프 =====
+    function animate(){
+      requestAnimationFrame(animate);
+      const dt = Math.min(0.033, clock.getDelta());
+      if (controls.isLocked && !dead){
+        updatePhysics(dt);
+
+        // 우클릭 길게: 연속 설치 처리(간격 제한)
+        if (rightDown){
+          const now = performance.now();
+          if (now - lastPlaceTime >= PLACE_RATE_MS){
+            performPlaceAtCrosshair();
+            lastPlaceTime = now;
+          }
+        }
+      }
+      updateTargetHighlight();
+      renderer.render(scene, camera);
+    }
+  </script>
+</body>
+</html>
