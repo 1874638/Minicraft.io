@@ -101,7 +101,9 @@
     <h1 style="margin:0 0 6px;">MiniCraft 3D</h1>
     <div>클릭하여 시작 (마우스 포인터 잠금)</div>
     <div style="opacity:0.9; font-size:14px;">
-      WASD 이동 • 마우스 시점 • 스페이스 점프(서바이벌) / 상승(크리에이티브) • Shift 하강(크리에이티브) • W 두 번: 달리기 • 좌클릭 파괴 • 우클릭 길게: 연속 설치 • 1~0 인벤토리 선택 • Esc 메뉴
+      WASD 이동 • 마우스 시점 • 스페이스 점프(서바이벌) / 상승(크리에이티브) • Shift 하강(크리에이티브)
+      • W 두 번: 달리기 • 좌클릭: 채굴(누르고 있으면 금 가는 연출 후 파괴)
+      • 우클릭: 블록/액체 설치 또는 빈 양동이로 액체 채취 • 1~0 인벤토리 선택 • Esc 메뉴
     </div>
     <button id="startBtn">시작</button>
   </div>
@@ -115,7 +117,8 @@
         <li>스페이스: 점프(서바이벌) / 상승(크리에이티브)</li>
         <li>Shift: 하강(크리에이티브)</li>
         <li>W 두 번: 달리기</li>
-        <li>좌클릭: 블록 파괴(서바이벌은 인벤토리로 획득)</li>
+        <li>좌클릭: 블록 파괴(누르고 있으면 금 가는 연출 후 파괴)</li>
+        <li>우클릭: 선택 블록/액체 설치, 빈 양동이로 액체 채취</li>
         <li>우클릭(길게): 선택 블록 연속 설치</li>
         <li>1~0: 인벤토리 10칸 선택</li>
         <li>Esc: 메뉴(저장/불러오기/게임 모드)</li>
@@ -146,7 +149,7 @@
         <button id="loadBtn">월드 불러오기</button>
         <input type="file" id="fileInput" accept=".world" style="display:none" />
       </div>
-      <div class="hint">저장은 .world 바이너리 파일로 다운로드됩니다. 불러오기는 동일 크기 월드만 지원합니다.</div>
+      <div class="hint">저장은 .world 바이너리(v2)로 다운로드됩니다. v1 파일도 불러올 수 있습니다.</div>
 
       <div class="row" style="margin-top:12px;">
         <strong>게임 모드:</strong>
@@ -157,31 +160,41 @@
   </div>
 
   <script type="module">
-    // 외부 모듈
     import * as THREE from "https://esm.sh/three@0.161.0";
     import { PointerLockControls } from "https://esm.sh/three@0.161.0/examples/jsm/controls/PointerLockControls.js";
 
     // ===== 설정 =====
-    const SX = 500, SZ = 500, SY = 32; // 월드 사이즈: 500 x 500
+    const SX = 500, SZ = 500, SY = 32;
+    const N = SX*SY*SZ;
     const SEA_LEVEL = 6;
     const VOID_Y = -10;
     const RESPAWN_DELAY = 1000; // ms
 
-    // 월드 파일 포맷
-    const FILE_MAGIC = [0x57,0x4C,0x44,0x33]; // 'WLD3'
-    const FILE_VERSION = 1;
+    // 월드 파일 포맷 (v2: 액체 레벨 저장)
+    const FILE_MAGIC = [0x57,0x4C,0x44,0x33];
+    const FILE_VERSION = 2;
 
-    // 블록 정의 (베드락 추가)
-    const BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, WOOD:4, LEAF:5, BEDROCK:6 };
-    const BLOCK_TYPES = [BLOCK.GRASS, BLOCK.DIRT, BLOCK.STONE, BLOCK.WOOD, BLOCK.LEAF, BLOCK.BEDROCK];
-    const BLOCK_NAMES = { 1:"잔디", 2:"흙", 3:"석재", 4:"나무", 5:"나뭇잎", 6:"베드락" };
+    // 블록 정의
+    const BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, WOOD:4, LEAF:5, BEDROCK:6, WATER:7, LAVA:8 };
+    const BLOCK_TYPES = [BLOCK.GRASS, BLOCK.DIRT, BLOCK.STONE, BLOCK.WOOD, BLOCK.LEAF, BLOCK.BEDROCK, BLOCK.WATER, BLOCK.LAVA];
+    const BLOCK_NAMES = { 1:"잔디", 2:"흙", 3:"석재", 4:"나무", 5:"나뭇잎", 6:"베드락", 7:"물", 8:"용암" };
     const BLOCK_MATS = {
       [BLOCK.GRASS]:  new THREE.MeshStandardMaterial({ color: 0x3ba745 }),
       [BLOCK.DIRT]:   new THREE.MeshStandardMaterial({ color: 0x8b5a2b }),
       [BLOCK.STONE]:  new THREE.MeshStandardMaterial({ color: 0x8a8f98 }),
       [BLOCK.WOOD]:   new THREE.MeshStandardMaterial({ color: 0x8a5a2b }),
       [BLOCK.LEAF]:   new THREE.MeshStandardMaterial({ color: 0x2fa34a, transparent:true, opacity:0.95 }),
-      [BLOCK.BEDROCK]:new THREE.MeshStandardMaterial({ color: 0x222222 })
+      [BLOCK.BEDROCK]:new THREE.MeshStandardMaterial({ color: 0x222222 }),
+      [BLOCK.WATER]:  new THREE.MeshStandardMaterial({ color: 0x3aa7ff, transparent:true, opacity:0.6, depthWrite:false }),
+      [BLOCK.LAVA]:   new THREE.MeshStandardMaterial({ color: 0xff6a00, transparent:true, opacity:0.75, emissive:0x802000, emissiveIntensity:0.35 })
+    };
+
+    // 아이템(양동이)
+    const ITEM = { EMPTY_BUCKET:101, WATER_BUCKET:102, LAVA_BUCKET:103 };
+    const ITEM_NAMES = {
+      [ITEM.EMPTY_BUCKET]:"빈 양동이",
+      [ITEM.WATER_BUCKET]:"물 양동이",
+      [ITEM.LAVA_BUCKET]:"용암 양동이",
     };
 
     // 플레이어 물리
@@ -193,26 +206,58 @@
     const MOVE_SPEED    = 6.0;
     const AIR_CONTROL   = 0.2;
     const RAY_DIST      = 6;
-    const FLY_SPEED     = 8.0; // 크리에이티브 비행 속도
+    const FLY_SPEED     = 8.0;
 
-    // 달리기(스프린트)
-    const SPRINT_MULT = 1.7;         // 달리기 배속
-    const DOUBLE_TAP_MS = 250;       // 더블탭 허용 시간(ms)
+    // 낙하 데미지 설정(블록 수 기준)
+    const SAFE_FALL_BLOCKS = 3;
+    const DAMAGE_PER_BLOCK = 1;
 
-    // 연속 설치 설정
-    const PLACE_RATE_MS = 120; // 연속 설치 간격(ms)
+    // 용암 피해(하트/초)
+    const LAVA_DPS_HEARTS = 1;
+
+    // 스프린트
+    const SPRINT_MULT = 1.7;
+    const DOUBLE_TAP_MS = 250;
+
+    // 연속 설치
+    const PLACE_RATE_MS = 120;
+
+    // 액체 시뮬
+    const WATER_SOURCE_LVL = 8;
+    const LAVA_SOURCE_LVL  = 6;
+    const FLUID_STEPS_PER_FRAME = 250;
+
+    // 채굴(누르고 유지) 시간 스케일(ms)
+    const MINE_TIME_FACTOR = 700;
+
+    // 블록 경도(간이)
+    const HARDNESS = {
+      [BLOCK.AIR]: 0,
+      [BLOCK.LEAF]: 0.2,
+      [BLOCK.GRASS]: 0.6,
+      [BLOCK.DIRT]: 0.6,
+      [BLOCK.WOOD]: 0.8,
+      [BLOCK.STONE]: 1.5,
+      [BLOCK.BEDROCK]: Infinity,
+      [BLOCK.WATER]: Infinity,
+      [BLOCK.LAVA]: Infinity
+    };
 
     // ===== 전역 상태 =====
     let scene, renderer, camera, controls, clock;
-    let world; // Uint8Array (길이 SX*SY*SZ)
-    let meshes = {}; // type -> InstancedMesh(노출된 블록만)
+    let world; // Uint8Array(N) : 블록 ID
+    let waterLevel, lavaLevel; // Uint8Array(N)
+    let meshes = {}; // type -> InstancedMesh
     const raycaster = new THREE.Raycaster();
     raycaster.far = RAY_DIST;
 
-    // 타겟 하이라이트(히트박스 표시)
+    // 타겟 하이라이트
     let highlight;
 
-    // 월드보더 메쉬 그룹
+    // 채굴 금 간 오버레이(와이어프레임)
+    let crackMesh;
+
+    // 월드보더
     let worldBorderGroup;
 
     // 플레이어/상태
@@ -225,13 +270,24 @@
     let deathTimeout = 0;
     const keys = new Set();
 
-    // 스프린트 상태
+    // 낙하 추적
+    let falling = false;
+    let fallStartMaxY = 0;
+
+    // 스프린트
     let isSprinting = false;
     let lastWTap = 0;
 
-    // 우클릭 연속 설치 상태
+    // 클릭 상태
     let rightDown = false;
     let lastPlaceTime = 0;
+    let leftDown = false;
+
+    // 채굴 진행 상태
+    let mining = false;
+    let miningTarget = { x:0, y:0, z:0 };
+    let miningStart = 0;
+    let miningDuration = 0; // ms
 
     // 모드/체력
     const MODE = { SURVIVAL: "survival", CREATIVE: "creative" };
@@ -239,12 +295,26 @@
     const HEART_MAX = 12;
     let hearts = HEART_MAX;
 
-    // 인벤토리(10칸)
+    // 용암 도트 누적
+    let lavaDmgAcc = 0;
+
+    // 인벤토리
     const INV_SLOTS = 10;
     let inventory = Array.from({length: INV_SLOTS}, ()=>({id:0, cnt:0}));
     let selectedSlot = 0;
 
-    // UI
+    // 액체 큐
+    let waterQ = [];
+    let lavaQ = [];
+
+    // 메쉬 리빌드 지연 플래그
+    let needsRebuild = false;
+    let lastRebuildAt = 0;
+
+    // 채굴 히트 이펙트
+    const hitEffects = []; // {sprite, born, life}
+
+    // UI DOM
     const overlay = document.getElementById("overlay");
     const startBtn = document.getElementById("startBtn");
     const heartsEl = document.getElementById("hearts");
@@ -263,22 +333,24 @@
     const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
     const inBounds = (x,y,z)=> x>=0 && x<SX && y>=0 && y<SY && z>=0 && z<SZ;
     const idx = (x,y,z)=> x + SX * (z + SZ * y);
+    const ixToX = (i)=> i % SX;
+    const ixToY = (i)=> Math.floor(i / (SX*SZ));
+    const ixToZ = (i)=> Math.floor(i / SX) % SZ;
     const get = (x,y,z)=> inBounds(x,y,z) ? world[idx(x,y,z)] : BLOCK.AIR;
-    const set = (x,y,z,b)=> { if (inBounds(x,y,z)) world[idx(x,y,z)] = b; };
+    const isWater = (b)=> b === BLOCK.WATER;
+    const isLava  = (b)=> b === BLOCK.LAVA;
+    const isFluid = (b)=> b === BLOCK.WATER || b === BLOCK.LAVA;
+    const isSolid = (b)=> b !== BLOCK.AIR && !isFluid(b);
 
-    // 노출 판정: 바닥(y=0) 아래쪽 OOB는 노출로 보지 않음
-    function isExposed(x,y,z){
-      if (!inBounds(x,y,z)) return false;
-      const b = get(x,y,z);
-      if (b === BLOCK.AIR) return false;
-      return (
-        !inBounds(x+1,y,z) || get(x+1,y,z)===BLOCK.AIR ||
-        !inBounds(x-1,y,z) || get(x-1,y,z)===BLOCK.AIR ||
-        !inBounds(x,y+1,z) || get(x,y+1,z)===BLOCK.AIR ||
-        (y>0 && (!inBounds(x,y-1,z) || get(x,y-1,z)===BLOCK.AIR)) ||
-        !inBounds(x,y,z+1) || get(x,y,z+1)===BLOCK.AIR ||
-        !inBounds(x,y,z-1) || get(x,y,z-1)===BLOCK.AIR
-      );
+    const breakableInSurvival = (b)=> b!==BLOCK.AIR && !isFluid(b) && b!==BLOCK.BEDROCK;
+
+    function setBlock(x,y,z,b){
+      if (!inBounds(x,y,z)) return;
+      const i = idx(x,y,z);
+      if (world[i] !== b){
+        world[i] = b;
+        needsRebuild = true;
+      }
     }
 
     function blockColorCSS(b){
@@ -317,7 +389,7 @@
       dir.shadow.camera.far = 800;
       scene.add(dir);
 
-      // 수면
+      // 수면(장식)
       const plane = new THREE.Mesh(
         new THREE.PlaneGeometry(12000,12000),
         new THREE.MeshPhongMaterial({ color:0x6ec6ff, transparent:true, opacity:0.12, depthWrite:false })
@@ -334,6 +406,14 @@
       highlight.renderOrder = 999;
       scene.add(highlight);
 
+      // 채굴 금 간 오버레이(와이어프레임 큐브)
+      const crackGeo = new THREE.BoxGeometry(1.012,1.012,1.012);
+      const crackMat = new THREE.MeshBasicMaterial({ color: 0x000000, wireframe: true, transparent: true, opacity: 0.0, depthTest: true, depthWrite: false });
+      crackMesh = new THREE.Mesh(crackGeo, crackMat);
+      crackMesh.visible = false;
+      crackMesh.renderOrder = 999;
+      scene.add(crackMesh);
+
       // 이벤트
       window.addEventListener("resize", onResize);
       document.addEventListener("keydown", onKeyDown);
@@ -349,7 +429,9 @@
         started = true;
       });
       controls.addEventListener("unlock", ()=>{
-        rightDown = false; // 포인터 해제 시 연속 설치 중단
+        rightDown = false;
+        leftDown = false;
+        cancelMining();
         if (!dead && started) menuEl.style.display = "flex";
       });
 
@@ -376,18 +458,20 @@
       // 모드 라디오
       modeRadios.forEach(r => r.addEventListener("change", onModeChanged));
 
-      // 월드 생성 + 나무 배치 (최소 20개, 최대 60개)
+      // 월드 생성 + 나무 배치
       world = createDefaultWorld(SX, SY, SZ);
-      placeRandomTrees(20 + Math.floor(Math.random() * 41)); // 20..60
+      waterLevel = new Uint8Array(N);
+      lavaLevel = new Uint8Array(N);
+      placeRandomTrees(20 + Math.floor(Math.random() * 41));
       rebuildVisibleMeshes();
 
-      // 월드보더 생성(가시 벽)
+      // 월드보더 생성
       createWorldBorder();
 
       // HUD/인벤 초기화
       initHearts();
       initInventoryUI();
-      resetInventoryForMode(); // 모드 기본(서바이벌) 세팅
+      resetInventoryForMode();
 
       // 스폰
       dropToGround(spawnPos);
@@ -403,7 +487,7 @@
       renderer.setSize(innerWidth, innerHeight);
     }
 
-    // ===== 월드보더(가시 벽 + 충돌은 물리에서 처리) =====
+    // ===== 월드보더 =====
     function createWorldBorder(){
       if (worldBorderGroup){
         scene.remove(worldBorderGroup);
@@ -421,34 +505,17 @@
         depthWrite: false
       });
 
-      // 서쪽(x = -0.5)
-      {
-        const geo = new THREE.BoxGeometry(thickness, height, SZ + 2);
+      const mk = (w,h,d,x,y,z)=>{
+        const geo = new THREE.BoxGeometry(w,h,d);
         const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set(-0.5, yCenter, (SZ-1)/2);
+        mesh.position.set(x,y,z);
         worldBorderGroup.add(mesh);
-      }
-      // 동쪽(x = SX-0.5)
-      {
-        const geo = new THREE.BoxGeometry(thickness, height, SZ + 2);
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set(SX - 0.5, yCenter, (SZ-1)/2);
-        worldBorderGroup.add(mesh);
-      }
-      // 북쪽(z = -0.5)
-      {
-        const geo = new THREE.BoxGeometry(SX + 2, height, thickness);
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set((SX-1)/2, yCenter, -0.5);
-        worldBorderGroup.add(mesh);
-      }
-      // 남쪽(z = SZ-0.5)
-      {
-        const geo = new THREE.BoxGeometry(SX + 2, height, thickness);
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set((SX-1)/2, yCenter, SZ - 0.5);
-        worldBorderGroup.add(mesh);
-      }
+      };
+
+      mk(thickness, height, SZ+2, -0.5, yCenter, (SZ-1)/2);
+      mk(thickness, height, SZ+2, SX-0.5, yCenter, (SZ-1)/2);
+      mk(SX+2, height, thickness, (SX-1)/2, yCenter, -0.5);
+      mk(SX+2, height, thickness, (SX-1)/2, yCenter, SZ-0.5);
 
       worldBorderGroup.renderOrder = 998;
       scene.add(worldBorderGroup);
@@ -502,9 +569,7 @@
           <div class="preview"></div>
           <div class="cnt"></div>
         `;
-        slot.addEventListener("click", ()=>{
-          selectSlot(i);
-        });
+        slot.addEventListener("click", ()=>{ selectSlot(i); });
         hotbarEl.appendChild(slot);
       }
       refreshInventoryUI();
@@ -518,13 +583,17 @@
           {id:BLOCK.STONE, cnt:9999},
           {id:BLOCK.WOOD,  cnt:9999},
           {id:BLOCK.LEAF,  cnt:9999},
-          {id:0,cnt:0},{id:0,cnt:0},{id:0,cnt:0},{id:0,cnt:0},{id:0,cnt:0}
+          {id:ITEM.EMPTY_BUCKET, cnt:9999},
+          {id:ITEM.WATER_BUCKET, cnt:9999},
+          {id:ITEM.LAVA_BUCKET, cnt:9999},
+          {id:0,cnt:0},{id:0,cnt:0}
         ];
       } else {
         inventory = [
           {id:BLOCK.DIRT,  cnt:20},
           {id:BLOCK.STONE, cnt:10},
-          {id:0,cnt:0},{id:0,cnt:0},{id:0,cnt:0},
+          {id:ITEM.EMPTY_BUCKET, cnt:1},
+          {id:0,cnt:0},{id:0,cnt:0},
           {id:0,cnt:0},{id:0,cnt:0},{id:0,cnt:0},{id:0,cnt:0},{id:0,cnt:0}
         ];
         hearts = HEART_MAX;
@@ -542,10 +611,31 @@
         const nameEl = el.querySelector(".name");
         const prevEl = el.querySelector(".preview");
         const cntEl  = el.querySelector(".cnt");
-        if (it.id){
+
+        if (!it.id){
+          nameEl.textContent = "";
+          prevEl.style.display = "none";
+          cntEl.textContent = "";
+          return;
+        }
+
+        if (BLOCK_NAMES[it.id]){
           nameEl.textContent = BLOCK_NAMES[it.id] || "";
           prevEl.style.background = blockColorCSS(it.id);
           prevEl.style.display = "block";
+          cntEl.textContent = (mode===MODE.CREATIVE) ? "∞" : String(it.cnt);
+        } else if (ITEM_NAMES[it.id]){
+          nameEl.textContent = ITEM_NAMES[it.id];
+          prevEl.style.display = "block";
+          if (it.id === ITEM.EMPTY_BUCKET){
+            prevEl.style.background = "linear-gradient(#bbb,#888)";
+          } else if (it.id === ITEM.WATER_BUCKET){
+            prevEl.style.background = "linear-gradient(#3aa7ff,#1b6fd9)";
+          } else if (it.id === ITEM.LAVA_BUCKET){
+            prevEl.style.background = "linear-gradient(#ff8c00,#b33a00)";
+          } else {
+            prevEl.style.background = "#777";
+          }
           cntEl.textContent = (mode===MODE.CREATIVE) ? "∞" : String(it.cnt);
         } else {
           nameEl.textContent = "";
@@ -560,14 +650,14 @@
       refreshInventoryUI();
     }
 
-    function selectedBlockId(){
+    function selectedId(){
       const it = inventory[selectedSlot];
       return it?.id || 0;
     }
 
     function addToInventory(blockId, count=1){
       if (!blockId || blockId===BLOCK.AIR) return true;
-      if (blockId === BLOCK.BEDROCK) return true; // 베드락은 인벤토리로 추가하지 않음
+      if (blockId === BLOCK.BEDROCK) return true;
       if (mode === MODE.CREATIVE) return true;
       for (let i=0;i<INV_SLOTS;i++){
         if (inventory[i].id === blockId){
@@ -598,27 +688,33 @@
       return true;
     }
 
+    function replaceSelectedItem(newId){
+      const it = inventory[selectedSlot];
+      if (!it?.id) return false;
+      it.id = newId;
+      refreshInventoryUI();
+      return true;
+    }
+
     // ===== 입력 =====
     function onKeyDown(e){
       const k = e.key.toLowerCase();
       keys.add(k);
 
-      // W 더블탭으로 스프린트 시작
       if (k === "w" && !e.repeat){
         const now = performance.now();
         if (now - lastWTap <= DOUBLE_TAP_MS){
-          isSprinting = true; // W를 누르고 있는 동안만 유지 (keyup에서 해제)
+          isSprinting = true;
         }
         lastWTap = now;
       }
 
-      // 숫자키로 슬롯 선택 (1~0 -> 0..9)
       if (k>="1" && k<="9"){
         selectSlot(Number(k)-1);
       } else if (k==="0"){
         selectSlot(9);
       }
-      // 점프는 서바이벌에서만
+
       if (k===" "){
         if (!dead && onGround && mode===MODE.SURVIVAL){ vel.y = JUMP_V; onGround = false; }
       }
@@ -627,26 +723,21 @@
       const k = e.key.toLowerCase();
       keys.delete(k);
       if (k === "w"){
-        isSprinting = false; // W 키를 떼면 스프린트 해제
+        isSprinting = false;
       }
     }
 
-    // ===== 기본 월드 생성 (y=0 전체 베드락) =====
+    // ===== 기본 월드 생성 (y=0 베드락) =====
     function createDefaultWorld(sx, sy, sz){
       const arr = new Uint8Array(sx*sy*sz);
       for (let x=0; x<sx; x++){
         for (let z=0; z<sz; z++){
-          // y=0은 항상 베드락
           arr[idx(x,0,z)] = BLOCK.BEDROCK;
 
           const h = Math.floor(
-            8
-            + 4.0 * Math.sin(x * 0.02)
-            + 3.5 * Math.cos(z * 0.018)
-            + 2.2 * Math.sin((x + z) * 0.012)
+            8 + 4.0*Math.sin(x*0.02) + 3.5*Math.cos(z*0.018) + 2.2*Math.sin((x+z)*0.012)
           );
           const height = clamp(h, 1, sy-3);
-          // 지형 채우기: 1..height
           for (let y=1; y<=height; y++){
             let id = BLOCK.DIRT;
             if (y <= height - 3) id = BLOCK.STONE;
@@ -679,7 +770,7 @@
         if (get(x,ty,z) !== BLOCK.AIR) return false;
       }
       for (let ty = y+1; ty <= topY; ty++){
-        set(x, ty, z, BLOCK.WOOD);
+        setBlock(x, ty, z, BLOCK.WOOD);
       }
       for (let ly = topY-2; ly <= topY+1; ly++){
         const r = (ly === topY+1) ? 1 : 2;
@@ -689,7 +780,7 @@
             if (Math.max(Math.abs(lx-x), Math.abs(lz-z)) > r) continue;
             if (lx === x && lz === z && ly <= topY) continue;
             if (get(lx,ly,lz) === BLOCK.AIR){
-              set(lx,ly,lz, BLOCK.LEAF);
+              setBlock(lx,ly,lz, BLOCK.LEAF);
             }
           }
         }
@@ -710,15 +801,17 @@
       }
     }
 
-    // ===== 메쉬 빌드 (노출된 블록만) =====
+    // ===== 메쉬 빌드 =====
     function rebuildVisibleMeshes(){
       Object.values(meshes).forEach(m => scene.remove(m));
       meshes = {};
 
       const counts = {
         [BLOCK.GRASS]:0, [BLOCK.DIRT]:0, [BLOCK.STONE]:0,
-        [BLOCK.WOOD]:0, [BLOCK.LEAF]:0, [BLOCK.BEDROCK]:0
+        [BLOCK.WOOD]:0, [BLOCK.LEAF]:0, [BLOCK.BEDROCK]:0,
+        [BLOCK.WATER]:0, [BLOCK.LAVA]:0
       };
+
       for (let y=0; y<SY; y++){
         for (let z=0; z<SZ; z++){
           for (let x=0; x<SX; x++){
@@ -735,7 +828,7 @@
         const c = counts[type] | 0;
         if (!c) continue;
         const mesh = new THREE.InstancedMesh(cubeGeo, BLOCK_MATS[type], c);
-        mesh.castShadow = true;
+        mesh.castShadow = (type!==BLOCK.WATER && type!==BLOCK.LAVA);
         mesh.receiveShadow = true;
         meshes[type] = mesh;
         scene.add(mesh);
@@ -744,8 +837,10 @@
       const temp = new THREE.Object3D();
       const filled = {
         [BLOCK.GRASS]:0, [BLOCK.DIRT]:0, [BLOCK.STONE]:0,
-        [BLOCK.WOOD]:0, [BLOCK.LEAF]:0, [BLOCK.BEDROCK]:0
+        [BLOCK.WOOD]:0, [BLOCK.LEAF]:0, [BLOCK.BEDROCK]:0,
+        [BLOCK.WATER]:0, [BLOCK.LAVA]:0
       };
+
       for (let y=0; y<SY; y++){
         for (let z=0; z<SZ; z++){
           for (let x=0; x<SX; x++){
@@ -761,49 +856,181 @@
         }
       }
       for (const type of Object.keys(meshes)) meshes[type].instanceMatrix.needsUpdate = true;
+      needsRebuild = false;
+      lastRebuildAt = performance.now();
     }
 
-    // ===== 클릭(파괴/설치) 및 연속 설치 =====
+    // 노출 판정: 주위에 공기(OOB 포함)가 있으면 노출
+    function isExposed(x,y,z){
+      if (!inBounds(x,y,z)) return false;
+      const b = get(x,y,z);
+      if (b === BLOCK.AIR) return false;
+      const empty = (xx,yy,zz)=> !inBounds(xx,yy,zz) || get(xx,yy,zz)===BLOCK.AIR;
+      return (
+        empty(x+1,y,z) ||
+        empty(x-1,y,z) ||
+        empty(x,y+1,z) ||
+        (y>0 && empty(x,y-1,z)) ||
+        empty(x,y,z+1) ||
+        empty(x,y,z-1)
+      );
+    }
+
+    // ===== 클릭(파괴/설치/양동이/채굴유지) =====
     function onMouseDown(e){
       if (!controls.isLocked || dead) return;
       if (e.button === 0){
-        // 좌클릭: 제거(채굴)
-        performBreakAtCrosshair();
+        leftDown = true;
+        if (mode === MODE.CREATIVE){
+          // 크리에이티브는 즉시 파괴
+          performBreakAtCrosshair(true);
+        } else {
+          // 서바이벌은 누르고 유지하여 파괴
+          startMiningAtCrosshair();
+        }
       } else if (e.button === 2){
-        // 우클릭: 설치 1회 + 연속 설치 시작
-        performPlaceAtCrosshair();
+        handleRightClick();
         rightDown = true;
       }
     }
     function onMouseUp(e){
       if (e.button === 2){
         rightDown = false;
+      } else if (e.button === 0){
+        leftDown = false;
+        cancelMining();
       }
     }
 
-    function performBreakAtCrosshair(){
+    function handleRightClick(){
+      const sel = selectedId();
+      if (sel === ITEM.EMPTY_BUCKET){
+        if (performBucketCollectAtCrosshair()) return;
+      }
+      if (sel === ITEM.WATER_BUCKET || sel === ITEM.LAVA_BUCKET){
+        performFluidPlaceAtCrosshair(sel);
+        return;
+      }
+      performPlaceAtCrosshair();
+    }
+
+    function performBreakAtCrosshair(allowFluids=false){
       raycaster.setFromCamera({x:0,y:0}, camera);
       const targets = Object.values(meshes);
       const hits = raycaster.intersectObjects(targets, false);
       if (!hits.length) return false;
       const hit = hits[0];
+      spawnHitEffect(hit);
+
       const pos = instancePosition(hit.object, hit.instanceId);
       const bx = Math.round(pos.x), by = Math.round(pos.y), bz = Math.round(pos.z);
       const mined = get(bx,by,bz);
-      if (mined === BLOCK.BEDROCK) return false; // 베드락 파괴 불가
+
+      if (isFluid(mined) && !allowFluids) return true;
+
+      if (mined === BLOCK.BEDROCK) return true;
       if (inBounds(bx,by,bz) && mined!==BLOCK.AIR){
-        set(bx,by,bz,BLOCK.AIR);
-        addToInventory(mined, 1); // 서바이벌 획득(함수 내에서 모드 처리)
-        rebuildVisibleMeshes();
+        if (isFluid(mined)){
+          // 크리에이티브에서만 액체 제거
+          if (mode === MODE.CREATIVE){
+            clearFluidAt(bx,by,bz);
+            setBlock(bx,by,bz, BLOCK.AIR);
+            enqueueNeighbors(bx,by,bz);
+            scheduleRebuildSoon();
+          }
+        } else {
+          setBlock(bx,by,bz,BLOCK.AIR);
+          addToInventory(mined, 1);
+          rebuildVisibleMeshes();
+        }
         return true;
       }
       return false;
     }
 
+    // ===== 채굴(누르고 유지) =====
+    function startMiningAtCrosshair(){
+      raycaster.setFromCamera({x:0,y:0}, camera);
+      const targets = Object.values(meshes);
+      const hits = raycaster.intersectObjects(targets, false);
+      if (!hits.length){ cancelMining(); return false; }
+      const hit = hits[0];
+      const pos = instancePosition(hit.object, hit.instanceId);
+      const bx = Math.round(pos.x), by = Math.round(pos.y), bz = Math.round(pos.z);
+      const b = get(bx,by,bz);
+      if (!breakableInSurvival(b)){ cancelMining(); return false; }
+
+      // 새 타겟이거나 초기화
+      if (!mining || bx!==miningTarget.x || by!==miningTarget.y || bz!==miningTarget.z){
+        mining = true;
+        miningTarget = {x:bx,y:by,z:bz};
+        const hardness = HARDNESS[b] ?? 1.0;
+        miningDuration = Math.max(150, Math.floor((isFinite(hardness) ? hardness : 10) * MINE_TIME_FACTOR));
+        miningStart = performance.now();
+
+        // 오버레이 표시
+        crackMesh.position.set(bx,by,bz);
+        crackMesh.visible = true;
+        updateCrackOverlay(0);
+      }
+      return true;
+    }
+
+    function cancelMining(){
+      mining = false;
+      miningStart = 0;
+      miningDuration = 0;
+      if (crackMesh){ crackMesh.visible = false; crackMesh.material.opacity = 0; }
+    }
+
+    function updateMining(now){
+      if (!mining){ return; }
+
+      // 현재 레이캐스트로 타겟 유지 확인
+      raycaster.setFromCamera({x:0,y:0}, camera);
+      const targets = Object.values(meshes);
+      const hits = raycaster.intersectObjects(targets, false);
+      if (!hits.length){ cancelMining(); return; }
+      const hit = hits[0];
+      const pos = instancePosition(hit.object, hit.instanceId);
+      const bx = Math.round(pos.x), by = Math.round(pos.y), bz = Math.round(pos.z);
+
+      if (bx!==miningTarget.x || by!==miningTarget.y || bz!==miningTarget.z){
+        // 타겟이 바뀌면 새로 시작
+        startMiningAtCrosshair();
+        return;
+      }
+
+      // 블록이 이미 없어졌거나(다른 이유), 액체/베드락으로 바뀌면 중지
+      const curId = get(bx,by,bz);
+      if (!breakableInSurvival(curId)){ cancelMining(); return; }
+
+      const elapsed = now - miningStart;
+      const progress = clamp(elapsed / miningDuration, 0, 1);
+      updateCrackOverlay(progress);
+
+      if (progress >= 1){
+        // 파괴
+        setBlock(bx,by,bz, BLOCK.AIR);
+        addToInventory(curId, 1);
+        rebuildVisibleMeshes();
+        spawnHitEffect(hit); // 마지막 히트 이펙트
+        cancelMining();
+      }
+    }
+
+    function updateCrackOverlay(progress){
+      if (!crackMesh) return;
+      crackMesh.visible = true;
+      // 0.15 ~ 0.9 까지 불투명도 증가
+      crackMesh.material.opacity = 0.15 + 0.75 * clamp(progress,0,1);
+    }
+
+    // ===== 설치/버킷 =====
     function performPlaceAtCrosshair(){
-      if (!controls.isLocked || dead) return false;
-      const placeId = selectedBlockId();
-      if (!placeId || placeId === BLOCK.BEDROCK) return false;
+      const placeId = selectedId();
+      if (!placeId || BLOCK_NAMES[placeId] == null) return false; // 아이템은 제외
+      if (placeId === BLOCK.BEDROCK) return false;
 
       raycaster.setFromCamera({x:0,y:0}, camera);
       const targets = Object.values(meshes);
@@ -823,11 +1050,76 @@
       if (wouldIntersectPlayer(target.x, target.y, target.z)) return false;
 
       if (mode===MODE.CREATIVE || consumeFromSelected(1)){
-        set(target.x, target.y, target.z, placeId);
+        setBlock(target.x, target.y, target.z, placeId);
         rebuildVisibleMeshes();
         return true;
       }
       return false;
+    }
+
+    function performFluidPlaceAtCrosshair(bucketId){
+      raycaster.setFromCamera({x:0,y:0}, camera);
+      const targets = Object.values(meshes);
+      const hits = raycaster.intersectObjects(targets, false);
+      if (!hits.length) return false;
+
+      const hit = hits[0];
+      const base = instancePosition(hit.object, hit.instanceId);
+      const n = hit.face?.normal ? hit.face.normal.clone() : new THREE.Vector3(0,1,0);
+      const tx = Math.round(base.x + n.x);
+      const ty = Math.round(base.y + n.y);
+      const tz = Math.round(base.z + n.z);
+      if (!inBounds(tx,ty,tz)) return false;
+      if (get(tx,ty,tz) !== BLOCK.AIR) return false;
+      if (wouldIntersectPlayer(tx,ty,tz)) return false;
+
+      if (bucketId === ITEM.WATER_BUCKET){
+        placeWaterSource(tx,ty,tz);
+        if (mode===MODE.SURVIVAL) replaceSelectedItem(ITEM.EMPTY_BUCKET);
+        return true;
+      } else if (bucketId === ITEM.LAVA_BUCKET){
+        placeLavaSource(tx,ty,tz);
+        if (mode===MODE.SURVIVAL) replaceSelectedItem(ITEM.EMPTY_BUCKET);
+        return true;
+      }
+      return false;
+    }
+
+    function performBucketCollectAtCrosshair(){
+      raycaster.setFromCamera({x:0,y:0}, camera);
+      const targets = Object.values(meshes);
+      const hits = raycaster.intersectObjects(targets, false);
+      if (!hits.length) return false;
+      const hit = hits[0];
+      const pos = instancePosition(hit.object, hit.instanceId);
+      const bx = Math.round(pos.x), by = Math.round(pos.y), bz = Math.round(pos.z);
+      const b = get(bx,by,bz);
+      if (b === BLOCK.WATER){
+        const i = idx(bx,by,bz);
+        if (waterLevel[i] >= WATER_SOURCE_LVL){
+          clearFluidAt(bx,by,bz);
+          setBlock(bx,by,bz, BLOCK.AIR);
+          enqueueNeighbors(bx,by,bz);
+          if (mode===MODE.SURVIVAL) replaceSelectedItem(ITEM.WATER_BUCKET);
+          scheduleRebuildSoon();
+          return true;
+        }
+      } else if (b === BLOCK.LAVA){
+        const i = idx(bx,by,bz);
+        if (lavaLevel[i] >= LAVA_SOURCE_LVL){
+          clearFluidAt(bx,by,bz);
+          setBlock(bx,by,bz, BLOCK.AIR);
+          enqueueNeighbors(bx,by,bz);
+          if (mode===MODE.SURVIVAL) replaceSelectedItem(ITEM.LAVA_BUCKET);
+          scheduleRebuildSoon();
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function scheduleRebuildSoon(){
+      needsRebuild = true;
     }
 
     function instancePosition(instancedMesh, instanceId){
@@ -846,11 +1138,15 @@
       return !(bmax.x < pmin.x || bmin.x > pmax.x || bmax.y < pmin.y || bmin.y > pmax.y || bmax.z < pmin.z || bmin.z > pmax.z);
     }
 
-    // ===== 물리/충돌/낙하 데미지/사망 =====
+    // ===== 물리/충돌/낙하/사망 =====
     function dropToGround(pos){
       let y = Math.min(SY-1, Math.floor(pos.y));
-      while (y>0 && get(Math.floor(pos.x), y, Math.floor(pos.z)) === BLOCK.AIR) y--;
+      while (y>0 && isPassable(Math.floor(pos.x), y, Math.floor(pos.z))) y--;
       pos.y = y + 0.51;
+    }
+    function isPassable(x,y,z){
+      const b = get(x,y,z);
+      return !isSolid(b);
     }
 
     function kill(reason = "사망했습니다"){
@@ -860,6 +1156,7 @@
       deathReasonEl.textContent = reason;
       deathEl.style.display = "flex";
       menuEl.style.display = "none";
+      cancelMining();
       const t0 = performance.now();
       const tick = ()=>{
         const left = Math.max(0, RESPAWN_DELAY - (performance.now()-t0));
@@ -876,6 +1173,9 @@
       vel.set(0,0,0);
       dropToGround(playerPos);
       onGround = true;
+      falling = false;
+      fallStartMaxY = playerPos.y;
+      lavaDmgAcc = 0;
       dead = false;
       if (mode===MODE.SURVIVAL){
         hearts = HEART_MAX;
@@ -908,7 +1208,7 @@
       desired.addScaledVector(right, str);
       if (desired.lengthSq() > 0) desired.normalize();
 
-      // 스피드 계산 (크리에이티브/지상/공중 제어, 스프린트 반영)
+      // 스피드
       let baseSpeed = (onGround || mode===MODE.CREATIVE) ? MOVE_SPEED : MOVE_SPEED * AIR_CONTROL;
       if (isSprinting) baseSpeed *= SPRINT_MULT;
       const targetVel = desired.multiplyScalar(baseSpeed);
@@ -917,13 +1217,12 @@
       vel.z = THREE.MathUtils.damp(vel.z, targetVel.z, 10, dt);
 
       const prevOnGround = onGround;
-      const preVelY = vel.y;
 
-      // 수직(점프/중력 or 비행)
+      // 수직
       if (mode === MODE.CREATIVE){
         let upDown = 0;
-        if (keys.has(" ")) upDown += 1;      // 스페이스 상승
-        if (keys.has("shift")) upDown -= 1;  // 쉬프트 하강
+        if (keys.has(" ")) upDown += 1;
+        if (keys.has("shift")) upDown -= 1;
         const targetVy = upDown * FLY_SPEED;
         vel.y = THREE.MathUtils.damp(vel.y, targetVy, 10, dt);
       } else {
@@ -936,11 +1235,43 @@
       sweepAxis("z", dt);
       sweepAxis("y", dt);
 
-      // 착지 판정 -> 낙하 데미지 (서바이벌만)
-      if (!prevOnGround && onGround){
-        const impact = Math.abs(preVelY);
-        if (impact > 12 && mode===MODE.SURVIVAL){
-          applyDamage(6, "낙하 데미지로 사망");
+      // 낙하 시작/진행
+      if (prevOnGround && !onGround) {
+        falling = true;
+        fallStartMaxY = playerPos.y;
+      }
+      if (!onGround && falling) {
+        if (playerPos.y > fallStartMaxY) fallStartMaxY = playerPos.y;
+      }
+      // 착지 -> 블록거리 기반
+      if (!prevOnGround && onGround) {
+        if (falling) {
+          const landingY = playerPos.y;
+          const distBlocks = Math.max(0, Math.floor(fallStartMaxY - landingY));
+          const harmful = Math.max(0, distBlocks - SAFE_FALL_BLOCKS);
+          if (harmful > 0 && mode === MODE.SURVIVAL) {
+            const dmgHearts = harmful * DAMAGE_PER_BLOCK;
+            applyDamage(dmgHearts, "낙하 데미지");
+          }
+        }
+        falling = false;
+      }
+
+      // 용암 접촉 데미지(서바이벌)
+      if (mode===MODE.SURVIVAL){
+        const fx = Math.floor(playerPos.x);
+        const fy = Math.floor(playerPos.y);
+        const fz = Math.floor(playerPos.z);
+        const i = idx(fx,fy,fz);
+        const inLava = inBounds(fx,fy,fz) && lavaLevel[i] > 0;
+        if (inLava){
+          lavaDmgAcc += dt * LAVA_DPS_HEARTS;
+          while (lavaDmgAcc >= 1.0){
+            applyDamage(1, "용암에 탔습니다");
+            lavaDmgAcc -= 1.0;
+          }
+        } else {
+          lavaDmgAcc = Math.max(0, lavaDmgAcc - dt*0.5);
         }
       }
 
@@ -975,12 +1306,13 @@
       const bminZ = Math.floor(minZ + 0.5 - EPS);
       const bmaxZ = Math.floor(maxZ + 0.5 - EPS);
 
-      // 블록과의 충돌 처리
+      // 블록 충돌(액체는 통과)
       for (let by=bminY; by<=bmaxY; by++){
         for (let bz=bminZ; bz<=bmaxZ; bz++){
           for (let bx=bminX; bx<=bmaxX; bx++){
             if (!inBounds(bx,by,bz)) continue;
-            if (get(bx,by,bz)===BLOCK.AIR) continue;
+            const bid = get(bx,by,bz);
+            if (!isSolid(bid)) continue;
 
             const blockMinX = bx - 0.5, blockMaxX = bx + 0.5;
             const blockMinY = by - 0.5, blockMaxY = by + 0.5;
@@ -1017,7 +1349,7 @@
         }
       }
 
-      // 월드보더 충돌(벽): x,z 경계 [-0.5, SX-0.5], [-0.5, SZ-0.5]
+      // 월드보더
       if (axis==="x"){
         minX = nx - PLAYER_RADIUS; maxX = nx + PLAYER_RADIUS;
         const minWall = -0.5, maxWall = SX - 0.5;
@@ -1045,7 +1377,278 @@
       if (axis==="z") playerPos.z = nz;
     }
 
-    // ===== 타겟 하이라이트 업데이트 + 연속 설치 처리 =====
+    // ===== 액체 시뮬 =====
+    function placeWaterSource(x,y,z){
+      const i = idx(x,y,z);
+      waterLevel[i] = WATER_SOURCE_LVL;
+      lavaLevel[i] = 0; // 충돌시 물 우선
+      setBlock(x,y,z, BLOCK.WATER);
+      enqueue(i, waterQ);
+      enqueueNeighbors(x,y,z, true);
+    }
+
+    function placeLavaSource(x,y,z){
+      const i = idx(x,y,z);
+      lavaLevel[i] = LAVA_SOURCE_LVL;
+      waterLevel[i] = 0;
+      setBlock(x,y,z, BLOCK.LAVA);
+      enqueue(i, lavaQ);
+      enqueueNeighbors(x,y,z, true);
+    }
+
+    function clearFluidAt(x,y,z){
+      const i = idx(x,y,z);
+      waterLevel[i] = 0;
+      lavaLevel[i] = 0;
+    }
+
+    function enqueue(i, q){ q.push(i); }
+    function enqueueNeighbors(x,y,z, includeSelf=false){
+      const dirs = [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,-1,0],[0,1,0]];
+      const i = idx(x,y,z);
+      if (includeSelf){ enqueue(i, waterQ); enqueue(i, lavaQ); }
+      for (const [dx,dy,dz] of dirs){
+        const nx = x+dx, ny = y+dy, nz = z+dz;
+        if (!inBounds(nx,ny,nz)) continue;
+        const ii = idx(nx,ny,nz);
+        enqueue(ii, waterQ);
+        enqueue(ii, lavaQ);
+      }
+    }
+
+    function tickFluids(steps=FLUID_STEPS_PER_FRAME){
+      let s = 0;
+      while (s < steps && (waterQ.length || lavaQ.length)){
+        if (waterQ.length){
+          const i = waterQ.shift();
+          stepWater(i);
+          s++;
+        }
+        if (s >= steps) break;
+        if (lavaQ.length){
+          const i = lavaQ.shift();
+          stepLava(i);
+          s++;
+        }
+      }
+      if (needsRebuild && performance.now() - lastRebuildAt > 80){
+        rebuildVisibleMeshes();
+      }
+    }
+
+    function stepWater(i){
+      const x = ixToX(i), y = ixToY(i), z = ixToZ(i);
+      if (!inBounds(x,y,z)) return;
+      let lvl = waterLevel[i];
+      const here = get(x,y,z);
+
+      if (lvl === 0){
+        if (here === BLOCK.WATER){
+          setBlock(x,y,z, BLOCK.AIR);
+          needsRebuild = true;
+        }
+        return;
+      }
+
+      if (here !== BLOCK.WATER){
+        setBlock(x,y,z, BLOCK.WATER);
+      }
+
+      // 아래로
+      if (y>0){
+        const bi = idx(x,y-1,z);
+        const belowBlock = get(x,y-1,z);
+        // 물이 용암을 만나면 석재로
+        if (lavaLevel[bi] > 0 || belowBlock === BLOCK.LAVA){
+          makeStone(x,y-1,z);
+          enqueueNeighbors(x,y-1,z,true);
+          return;
+        }
+        if (!isSolid(belowBlock)){
+          if (waterLevel[bi] < WATER_SOURCE_LVL){
+            waterLevel[bi] = WATER_SOURCE_LVL;
+            setBlock(x,y-1,z, BLOCK.WATER);
+            enqueue(bi, waterQ);
+          }
+        }
+      }
+
+      // 옆 확산
+      const downSolid = (y>0) ? isSolid(get(x,y-1,z)) : true;
+      const spreadBase = (lvl === WATER_SOURCE_LVL) ? 7 : (lvl-1);
+      if (downSolid && spreadBase > 0){
+        for (const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const nx=x+dx, nz=z+dz, ny=y;
+          if (!inBounds(nx,ny,nz)) continue;
+          const ni = idx(nx,ny,nz);
+          const nb = get(nx,ny,nz);
+
+          if (lavaLevel[ni] > 0 || nb === BLOCK.LAVA){
+            makeStone(nx,ny,nz);
+            enqueueNeighbors(nx,ny,nz,true);
+            continue;
+          }
+          if (!isSolid(nb)){
+            const nl = Math.max(spreadBase, waterLevel[ni]);
+            if (nl > waterLevel[ni]){
+              waterLevel[ni] = nl;
+              setBlock(nx,ny,nz, BLOCK.WATER);
+              enqueue(ni, waterQ);
+            }
+          }
+        }
+      }
+
+      // 소멸(주변 보강 없으면 감소)
+      let stronger = false;
+      const around = [
+        [x+1,y,z],[x-1,y,z],[x,y,z+1],[x,y,z-1],[x,y+1,z],[x,y-1,z]
+      ];
+      for (const [ax,ay,az] of around){
+        if (!inBounds(ax,ay,az)) continue;
+        const ai = idx(ax,ay,az);
+        if (waterLevel[ai] > Math.max( (lvl===WATER_SOURCE_LVL?7:lvl) )){
+          stronger = true; break;
+        }
+        if (waterLevel[ai] >= WATER_SOURCE_LVL && ay>=y) { stronger = true; break; }
+      }
+      if (!stronger && lvl < WATER_SOURCE_LVL){
+        waterLevel[i] = Math.max(0, lvl-1);
+        if (waterLevel[i] === 0){
+          if (get(x,y,z) === BLOCK.WATER) setBlock(x,y,z, BLOCK.AIR);
+        } else {
+          enqueue(i, waterQ);
+        }
+      } else {
+        if (lvl>0) enqueue(i, waterQ);
+      }
+    }
+
+    function stepLava(i){
+      const x = ixToX(i), y = ixToY(i), z = ixToZ(i);
+      if (!inBounds(x,y,z)) return;
+      let lvl = lavaLevel[i];
+      const here = get(x,y,z);
+
+      if (lvl === 0){
+        if (here === BLOCK.LAVA){
+          setBlock(x,y,z, BLOCK.AIR);
+          needsRebuild = true;
+        }
+        return;
+      }
+
+      if (here !== BLOCK.LAVA){
+        setBlock(x,y,z, BLOCK.LAVA);
+      }
+
+      // 아래로
+      if (y>0){
+        const bi = idx(x,y-1,z);
+        const belowBlock = get(x,y-1,z);
+        // 용암이 물을 만나면 석재
+        if (waterLevel[bi] > 0 || belowBlock === BLOCK.WATER){
+          makeStone(x,y-1,z);
+          enqueueNeighbors(x,y-1,z,true);
+          return;
+        }
+        if (!isSolid(belowBlock)){
+          if (lavaLevel[bi] < LAVA_SOURCE_LVL){
+            lavaLevel[bi] = LAVA_SOURCE_LVL;
+            setBlock(x,y-1,z, BLOCK.LAVA);
+            enqueue(bi, lavaQ);
+          }
+        }
+      }
+
+      // 옆 확산(짧게)
+      const downSolid = (y>0) ? isSolid(get(x,y-1,z)) : true;
+      const spreadBase = (lvl === LAVA_SOURCE_LVL) ? (LAVA_SOURCE_LVL-1) : (lvl-1);
+      if (downSolid && spreadBase > 0){
+        for (const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const nx=x+dx, nz=z+dz, ny=y;
+          if (!inBounds(nx,ny,nz)) continue;
+          const ni = idx(nx,ny,nz);
+          const nb = get(nx,ny,nz);
+
+          if (waterLevel[ni] > 0 || nb === BLOCK.WATER){
+            makeStone(nx,ny,nz);
+            enqueueNeighbors(nx,ny,nz,true);
+            continue;
+          }
+          if (!isSolid(nb)){
+            const nl = Math.max(spreadBase, lavaLevel[ni]);
+            if (nl > lavaLevel[ni]){
+              lavaLevel[ni] = nl;
+              setBlock(nx,ny,nz, BLOCK.LAVA);
+              enqueue(ni, lavaQ);
+            }
+          }
+        }
+      }
+
+      // 소멸
+      let stronger = false;
+      const around = [
+        [x+1,y,z],[x-1,y,z],[x,y,z+1],[x,y,z-1],[x,y+1,z],[x,y-1,z]
+      ];
+      for (const [ax,ay,az] of around){
+        if (!inBounds(ax,ay,az)) continue;
+        const ai = idx(ax,ay,az);
+        if (lavaLevel[ai] > Math.max( (lvl===LAVA_SOURCE_LVL?(LAVA_SOURCE_LVL-1):lvl) )){
+          stronger = true; break;
+        }
+        if (lavaLevel[ai] >= LAVA_SOURCE_LVL && ay>=y) { stronger = true; break; }
+      }
+      if (!stronger && lvl < LAVA_SOURCE_LVL){
+        lavaLevel[i] = Math.max(0, lvl-1);
+        if (lavaLevel[i] === 0){
+          if (get(x,y,z) === BLOCK.LAVA) setBlock(x,y,z, BLOCK.AIR);
+        } else {
+          enqueue(i, lavaQ);
+        }
+      } else {
+        if (lvl>0) enqueue(i, lavaQ);
+      }
+    }
+
+    function makeStone(x,y,z){
+      const i = idx(x,y,z);
+      waterLevel[i] = 0;
+      lavaLevel[i] = 0;
+      setBlock(x,y,z, BLOCK.STONE);
+    }
+
+    // ===== 히트 이펙트 =====
+    function spawnHitEffect(hit){
+      const mat = new THREE.SpriteMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: true, depthWrite: false });
+      const sprite = new THREE.Sprite(mat);
+      const p = hit.point ? hit.point.clone() : new THREE.Vector3();
+      const n = hit.face?.normal ? hit.face.normal.clone() : new THREE.Vector3(0,1,0);
+      p.add(n.multiplyScalar(0.51));
+      sprite.position.copy(p);
+      sprite.scale.set(0.35, 0.35, 0.35);
+      scene.add(sprite);
+      hitEffects.push({ sprite, born: performance.now(), life: 180 });
+    }
+
+    function updateHitEffects(now){
+      for (let i = hitEffects.length - 1; i >= 0; i--){
+        const he = hitEffects[i];
+        const t = (now - he.born) / he.life;
+        if (t >= 1){
+          scene.remove(he.sprite);
+          he.sprite.material.dispose();
+          hitEffects.splice(i,1);
+        } else {
+          const s = 0.35 + 0.3 * t;
+          he.sprite.scale.set(s, s, s);
+          he.sprite.material.opacity = 0.9 * (1 - t);
+        }
+      }
+    }
+
+    // ===== 타겟 하이라이트/연속 설치/채굴 업데이트 =====
     function updateTargetHighlight(){
       if (!controls.isLocked || dead){
         if (highlight) highlight.visible = false;
@@ -1066,7 +1669,7 @@
       }
     }
 
-    // ===== 저장/불러오기 =====
+    // ===== 저장/불러오기 (v2) =====
     function handleSave(){
       try {
         const buffer = serializeWorld();
@@ -1119,9 +1722,8 @@
     }
 
     function serializeWorld(){
-      const N = SX*SY*SZ;
       const headerSize = 16;
-      const buffer = new ArrayBuffer(headerSize + N);
+      const buffer = new ArrayBuffer(headerSize + N + (FILE_VERSION>=2 ? (N+N) : 0));
       const dv = new DataView(buffer);
       for (let i=0;i<4;i++) dv.setUint8(i, FILE_MAGIC[i]);
       dv.setUint16(4, FILE_VERSION, true);
@@ -1129,7 +1731,12 @@
       dv.setUint16(8, SY, true);
       dv.setUint16(10, SZ, true);
       dv.setUint32(12, N, true);
-      new Uint8Array(buffer, headerSize, N).set(world);
+      let off = headerSize;
+      new Uint8Array(buffer, off, N).set(world); off += N;
+      if (FILE_VERSION>=2){
+        new Uint8Array(buffer, off, N).set(waterLevel); off += N;
+        new Uint8Array(buffer, off, N).set(lavaLevel); off += N;
+      }
       return buffer;
     }
 
@@ -1140,36 +1747,75 @@
         if (dv.getUint8(i) !== FILE_MAGIC[i]) throw new Error("잘못된 파일 형식(시그니처).");
       }
       const version = dv.getUint16(4, true);
-      if (version !== FILE_VERSION) throw new Error(`지원하지 않는 버전: ${version}`);
       const sx = dv.getUint16(6, true);
       const sy = dv.getUint16(8, true);
       const sz = dv.getUint16(10, true);
-      const N = dv.getUint32(12, true);
+      const n  = dv.getUint32(12, true);
       if (sx !== SX || sy !== SY || sz !== SZ) {
         throw new Error(`월드 크기 불일치: 파일(${sx}x${sy}x${sz}) ≠ 현재(${SX}x${SY}x${SZ})`);
       }
-      if (N !== SX*SY*SZ) throw new Error("데이터 길이가 월드 크기와 일치하지 않습니다.");
-      const data = new Uint8Array(buffer, 16, N);
+      if (n !== N) throw new Error("데이터 길이가 월드 크기와 일치하지 않습니다.");
+      let off = 16;
+      const data = new Uint8Array(buffer, off, N); off += N;
       if (!world || world.length !== N) world = new Uint8Array(N);
       world.set(data);
+
+      if (!waterLevel || waterLevel.length !== N) waterLevel = new Uint8Array(N);
+      if (!lavaLevel  || lavaLevel.length  !== N) lavaLevel  = new Uint8Array(N);
+      waterLevel.fill(0); lavaLevel.fill(0);
+
+      if (version >= 2){
+        if (dv.byteLength >= 16 + N + N + N){
+          const w = new Uint8Array(buffer, off, N); off += N;
+          const l = new Uint8Array(buffer, off, N); off += N;
+          waterLevel.set(w);
+          lavaLevel.set(l);
+        }
+      }
+
+      // 액체 큐 초기화
+      waterQ = []; lavaQ = [];
+      for (let y=0;y<SY;y++){
+        for (let z=0;z<SZ;z++){
+          for (let x=0;x<SX;x++){
+            const i = idx(x,y,z);
+            if (waterLevel[i]>0) enqueue(i, waterQ);
+            if (lavaLevel[i]>0) enqueue(i, lavaQ);
+          }
+        }
+      }
     }
 
     // ===== 루프 =====
     function animate(){
       requestAnimationFrame(animate);
       const dt = Math.min(0.033, clock.getDelta());
+      const now = performance.now();
+
       if (controls.isLocked && !dead){
         updatePhysics(dt);
 
-        // 우클릭 길게: 연속 설치 처리(간격 제한)
+        // 우클릭 길게: 연속 설치(버킷/블록)
         if (rightDown){
-          const now = performance.now();
           if (now - lastPlaceTime >= PLACE_RATE_MS){
-            performPlaceAtCrosshair();
+            handleRightClick();
             lastPlaceTime = now;
           }
         }
+
+        // 좌클릭 유지 시: 채굴 진행(서바이벌)
+        if (leftDown && mode === MODE.SURVIVAL){
+          updateMining(now);
+        }
+
+        // 액체 시뮬레이션
+        tickFluids();
+      } else {
+        // 잠금 해제 시에도 액체는 천천히 진행
+        tickFluids(Math.floor(FLUID_STEPS_PER_FRAME/4));
       }
+
+      updateHitEffects(now);
       updateTargetHighlight();
       renderer.render(scene, camera);
     }
